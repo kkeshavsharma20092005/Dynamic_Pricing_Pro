@@ -1,0 +1,12 @@
+.venv/
+venv/
+__pycache__/
+*.pyc
+.git/
+.gitignore
+*.log
+*.err
+outputs/api.*
+models/random_forest.pkl
+models/gradient_boosting.pkl
+README.md

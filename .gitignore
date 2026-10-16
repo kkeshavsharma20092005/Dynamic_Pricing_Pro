@@ -1,0 +1,43 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+*.egg-info/
+.pytest_cache/
+.ipynb_checkpoints/
+
+# --- Model artifacts ---
+# These are REPRODUCIBLE from a seeded pipeline, so they do not belong in git.
+# random_forest.pkl alone is 105 MB - over GitHub's hard 100 MB limit; it would break
+# the push outright. Regenerate the losers any time with:
+#     python data_pipeline/train.py
+#
+# NOTE: a '#' only starts a comment at the START of a line. A trailing comment after a
+# pattern becomes PART OF THE PATTERN, silently un-ignoring nothing and shipping a
+# container with no model in it. Keep comments on their own lines.
+models/*.pkl
+!models/pricing_model.pkl
+
+# --- Outputs ---
+# Keep only what the API actually serves.
+outputs/*
+!outputs/metrics.json
+!outputs/ground_truth.json
+!outputs/feature_importance.csv
+!outputs/model_comparison.json
+*.log
+*.err
+
+# --- OS / editor ---
+.DS_Store
+Thumbs.db
+# Share the workspace config so a fresh clone opens ready-to-run (F5 launches the API,
+# tasks run the pipeline). Only ignore the per-user files VS Code writes for itself.
+.vscode/*
+!.vscode/settings.json
+!.vscode/launch.json
+!.vscode/tasks.json
+!.vscode/extensions.json
+.idea/

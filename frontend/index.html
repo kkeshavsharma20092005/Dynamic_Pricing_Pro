@@ -1,0 +1,521 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Indian Ride-Hailing Pricing Cockpit</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <style>
+    :root { color-scheme: dark; }
+    body {
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+      background:
+        radial-gradient(circle at top left, rgba(249, 115, 22, 0.20), transparent 24%),
+        radial-gradient(circle at top right, rgba(6, 182, 212, 0.18), transparent 28%),
+        linear-gradient(135deg, #07111f 0%, #0f172a 48%, #111827 100%);
+    }
+    .card {
+      background: rgba(15, 23, 42, 0.82);
+      border: 1px solid rgba(148, 163, 184, 0.16);
+      box-shadow: 0 20px 45px rgba(2, 6, 23, 0.22);
+      backdrop-filter: blur(16px);
+    }
+    .pill {
+      border: 1px solid rgba(148, 163, 184, 0.16);
+      background: rgba(15, 23, 42, 0.78);
+      color: #cbd5e1;
+    }
+    input[type=range] {
+      -webkit-appearance: none;
+      appearance: none;
+      height: 6px;
+      border-radius: 9999px;
+      background: linear-gradient(90deg, #f97316 0%, #06b6d4 100%);
+      outline: none;
+    }
+    input[type=range]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 18px;
+      height: 18px;
+      border-radius: 9999px;
+      background: #f8fafc;
+      border: 3px solid #0f172a;
+      cursor: pointer;
+      box-shadow: 0 2px 8px rgba(2, 6, 23, 0.3);
+    }
+    .chart-box { position: relative; height: 220px; width: 100%; }
+  </style>
+</head>
+<body class="min-h-screen text-slate-100">
+  <div class="mx-auto max-w-7xl px-4 py-5 sm:px-6 lg:px-8">
+    <header class="card mb-6 overflow-hidden rounded-[28px] p-6 sm:p-8">
+      <div class="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
+        <div class="max-w-3xl">
+          <div class="inline-flex items-center gap-2 rounded-full border border-orange-400/20 bg-orange-500/10 px-3 py-1 text-sm font-medium text-orange-200">
+            <span>⚡</span>
+            Indian ride-hailing pricing cockpit
+          </div>
+          <h1 class="mt-4 text-3xl font-semibold tracking-tight text-white sm:text-4xl">
+            Surge pricing for festival rush, monsoon swings and commuter peaks
+          </h1>
+          <p class="mt-3 max-w-2xl text-sm leading-6 text-slate-300 sm:text-base">
+            Built for the Indian market, where ride demand shifts with the weather, the
+            festival calendar (Holi, Eid, Ram Navami…) and rush-hour commute windows.
+          </p>
+        </div>
+        <div id="model-badge" class="rounded-2xl border border-slate-700/80 bg-slate-900/70 p-4 text-sm text-slate-300">
+          <div class="animate-pulse">loading model…</div>
+        </div>
+      </div>
+
+      <div class="mt-6 grid gap-3 md:grid-cols-3">
+        <div class="rounded-2xl border border-slate-700/80 bg-slate-900/60 p-4">
+          <div class="text-xs uppercase tracking-[0.24em] text-slate-400">Market pulse</div>
+          <div id="market-pill" class="mt-2 text-sm font-semibold text-sky-300">Healthy signal</div>
+          <p class="mt-1 text-sm text-slate-400">Optimised for live demand shifts across metro and tier-2 cities.</p>
+        </div>
+        <div class="rounded-2xl border border-slate-700/80 bg-slate-900/60 p-4">
+          <div class="text-xs uppercase tracking-[0.24em] text-slate-400">Decision lens</div>
+          <div class="mt-2 text-sm font-semibold text-emerald-300">Profit-first, guardrail-safe</div>
+          <p class="mt-1 text-sm text-slate-400">Keeps every recommendation within a chosen price band.</p>
+        </div>
+        <div class="rounded-2xl border border-slate-700/80 bg-slate-900/60 p-4">
+          <div class="text-xs uppercase tracking-[0.24em] text-slate-400">Scenario playbook</div>
+          <div class="mt-2 text-sm font-semibold text-orange-300">Festival, monsoon, weekend</div>
+          <p class="mt-1 text-sm text-slate-400">Tap one of the presets for a realistic rush-hour setup.</p>
+        </div>
+      </div>
+    </header>
+
+    <div class="grid gap-6 lg:grid-cols-12">
+      <aside class="space-y-5 lg:col-span-4">
+        <section class="card rounded-[24px] p-5">
+          <div class="flex items-center justify-between">
+            <div>
+              <h2 class="text-lg font-semibold text-white">Live scenario</h2>
+              <p class="mt-1 text-sm text-slate-400">Tune the market context and see the recommendation change.</p>
+            </div>
+            <span class="pill rounded-full px-3 py-1 text-xs font-medium uppercase tracking-[0.25em]">Real time</span>
+          </div>
+
+          <div class="mt-5 space-y-4">
+            <div>
+              <label class="mb-1 block text-[11px] font-semibold uppercase tracking-[0.28em] text-slate-400">Product</label>
+              <select id="product" class="w-full rounded-xl border border-slate-700 bg-slate-900/80 px-3 py-2.5 text-sm text-slate-100"></select>
+            </div>
+
+            <div class="grid gap-3 sm:grid-cols-2">
+              <div>
+                <label class="mb-1 block text-[11px] font-semibold uppercase tracking-[0.28em] text-slate-400">Weather</label>
+                <select id="weather" class="w-full rounded-xl border border-slate-700 bg-slate-900/80 px-3 py-2.5 text-sm text-slate-100">
+                  <option>Clear</option>
+                  <option>Cloudy</option>
+                  <option>Rainy</option>
+                  <option>Stormy</option>
+                </select>
+              </div>
+              <div>
+                <label class="mb-1 block text-[11px] font-semibold uppercase tracking-[0.28em] text-slate-400">Objective</label>
+                <select id="objective" class="w-full rounded-xl border border-slate-700 bg-slate-900/80 px-3 py-2.5 text-sm text-slate-100">
+                  <option value="profit">Profit</option>
+                  <option value="revenue">Revenue</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="space-y-4 pt-1">
+              <div>
+                <div class="mb-1 flex items-center justify-between text-sm">
+                  <span class="text-slate-300">Hour of day</span>
+                  <span id="hour-v" class="font-mono text-sky-300">18:00</span>
+                </div>
+                <input id="hour" type="range" min="0" max="23" value="18" class="w-full" />
+              </div>
+              <div>
+                <div class="mb-1 flex items-center justify-between text-sm">
+                  <span class="text-slate-300">Day of week</span>
+                  <span id="dow-v" class="font-mono text-sky-300">Wed</span>
+                </div>
+                <input id="dow" type="range" min="0" max="6" value="2" class="w-full" />
+              </div>
+              <div>
+                <div class="mb-1 flex items-center justify-between text-sm">
+                  <span class="text-slate-300">Temperature</span>
+                  <span id="temp-v" class="font-mono text-sky-300">21°C</span>
+                </div>
+                <input id="temp" type="range" min="-5" max="42" value="21" class="w-full" />
+              </div>
+              <div>
+                <div class="mb-1 flex items-center justify-between text-sm">
+                  <span class="text-slate-300">Precipitation</span>
+                  <span id="precip-v" class="font-mono text-sky-300">0 mm</span>
+                </div>
+                <input id="precip" type="range" min="0" max="25" step="0.5" value="0" class="w-full" />
+              </div>
+              <div>
+                <div class="mb-1 flex items-center justify-between text-sm">
+                  <span class="text-slate-300">Competitor prices</span>
+                  <span id="comp-v" class="font-mono text-sky-300">+0%</span>
+                </div>
+                <input id="comp" type="range" min="-40" max="40" value="0" class="w-full" />
+              </div>
+              <div>
+                <div class="mb-1 flex items-center justify-between text-sm">
+                  <span class="text-slate-300">Max price move</span>
+                  <span id="guard-v" class="font-mono text-sky-300">±30%</span>
+                </div>
+                <input id="guard" type="range" min="5" max="60" value="30" class="w-full" />
+              </div>
+            </div>
+
+            <label class="flex items-center gap-2 rounded-xl border border-slate-700/80 bg-slate-900/60 px-3 py-2 text-sm text-slate-300">
+              <input id="holiday" type="checkbox" class="rounded border-slate-700 bg-slate-900" />
+              Festival / public holiday
+            </label>
+          </div>
+        </section>
+
+        <section class="card rounded-[24px] p-5">
+          <h3 class="text-sm font-semibold uppercase tracking-[0.24em] text-slate-400">Quick presets</h3>
+          <div class="mt-3 grid grid-cols-2 gap-2">
+            <button data-preset="storm" class="preset rounded-xl border border-slate-700/80 bg-slate-900/70 px-3 py-2 text-sm text-slate-200 transition hover:bg-slate-800">🌧️ Monsoon rush</button>
+            <button data-preset="quiet" class="preset rounded-xl border border-slate-700/80 bg-slate-900/70 px-3 py-2 text-sm text-slate-200 transition hover:bg-slate-800">🌙 Late-night lull</button>
+            <button data-preset="undercut" class="preset rounded-xl border border-slate-700/80 bg-slate-900/70 px-3 py-2 text-sm text-slate-200 transition hover:bg-slate-800">⚔️ Rival undercut</button>
+            <button data-preset="reset" class="preset rounded-xl border border-slate-700/80 bg-slate-900/70 px-3 py-2 text-sm text-slate-200 transition hover:bg-slate-800">↺ Reset</button>
+          </div>
+        </section>
+      </aside>
+
+      <main class="space-y-6 lg:col-span-8">
+        <div id="warning" class="hidden rounded-2xl border border-amber-500/40 bg-amber-500/10 p-4 text-sm text-amber-100"></div>
+
+        <section class="card rounded-[24px] p-6">
+          <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            <div class="rounded-2xl border border-slate-700/80 bg-slate-900/50 p-4">
+              <div class="text-[11px] font-semibold uppercase tracking-[0.28em] text-slate-400">Current price</div>
+              <div id="cur-price" class="mt-2 text-2xl font-semibold text-slate-100">—</div>
+            </div>
+            <div class="rounded-2xl border border-slate-700/80 bg-slate-900/50 p-4">
+              <div class="text-[11px] font-semibold uppercase tracking-[0.28em] text-slate-400">Recommended</div>
+              <div id="rec-price" class="mt-2 text-3xl font-semibold text-emerald-300">—</div>
+              <div id="rec-delta" class="mt-1 text-sm font-medium">—</div>
+            </div>
+            <div class="rounded-2xl border border-slate-700/80 bg-slate-900/50 p-4">
+              <div class="text-[11px] font-semibold uppercase tracking-[0.28em] text-slate-400">Predicted demand</div>
+              <div id="demand" class="mt-2 text-2xl font-semibold text-sky-300">—</div>
+              <div id="demand-delta" class="mt-1 text-sm text-slate-400">—</div>
+            </div>
+            <div class="rounded-2xl border border-slate-700/80 bg-slate-900/50 p-4">
+              <div class="text-[11px] font-semibold uppercase tracking-[0.28em] text-slate-400">Projected <span id="obj-label">profit</span> lift</div>
+              <div id="lift" class="mt-2 text-2xl font-semibold text-orange-300">—</div>
+              <div class="mt-1 text-sm text-slate-400">vs. current price</div>
+            </div>
+          </div>
+
+          <div class="mt-5 flex flex-wrap items-center gap-3 border-t border-slate-800/90 pt-4">
+            <span class="text-[11px] font-semibold uppercase tracking-[0.28em] text-slate-400">Price elasticity</span>
+            <span id="elast" class="font-mono text-lg font-semibold text-slate-100">—</span>
+            <span id="elast-label" class="rounded-full bg-slate-800 px-2.5 py-1 text-xs text-slate-300">—</span>
+            <span id="elast-note" class="text-sm text-slate-400"></span>
+          </div>
+        </section>
+
+        <div class="grid gap-4 lg:grid-cols-2">
+          <section class="card rounded-[24px] p-4">
+            <div class="mb-2 flex items-center justify-between">
+              <div>
+                <h3 class="text-sm font-semibold text-white">Demand & profit curve</h3>
+                <p class="text-xs text-slate-400">The optimizer selects the peak of the orange line.</p>
+              </div>
+              <span class="rounded-full border border-slate-700/80 bg-slate-900/60 px-2.5 py-1 text-[11px] uppercase tracking-[0.24em] text-slate-400">Price sweep</span>
+            </div>
+            <div class="chart-box"><canvas id="curve"></canvas></div>
+          </section>
+
+          <section class="card rounded-[24px] p-4">
+            <div class="mb-2 flex items-center justify-between">
+              <div>
+                <h3 class="text-sm font-semibold text-white">Feature importance</h3>
+                <p class="text-xs text-slate-400">The signals that matter most for demand shifts.</p>
+              </div>
+              <span class="rounded-full border border-slate-700/80 bg-slate-900/60 px-2.5 py-1 text-[11px] uppercase tracking-[0.24em] text-slate-400">Signals</span>
+            </div>
+            <div class="chart-box"><canvas id="importance"></canvas></div>
+          </section>
+        </div>
+
+        <section class="card rounded-[24px] p-6">
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h3 class="text-lg font-semibold text-white">Model performance</h3>
+              <p class="mt-1 text-sm text-slate-400">A fresh view of the estimator behind the recommendation.</p>
+            </div>
+            <div id="insight-pill" class="rounded-full border border-emerald-400/20 bg-emerald-500/10 px-3 py-1 text-sm font-medium text-emerald-200">Ready to price</div>
+          </div>
+          <div id="metrics-grid" class="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-4"></div>
+          <div id="truth-panel" class="mt-5 border-t border-slate-800/90 pt-4 text-sm text-slate-400"></div>
+        </section>
+      </main>
+    </div>
+
+    <footer class="mt-6 border-t border-slate-800/90 pt-4 text-sm text-slate-500">
+      The lift figure is what the model <em>believes</em>, not a measured outcome. For real world deployment, validate it with a controlled A/B test against the current pricing rule.
+    </footer>
+  </div>
+
+  <script>
+    const $ = id => document.getElementById(id);
+    const INRCURRENCY = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 2 });
+    const DOW = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
+    let PRODUCTS = [], curveChart, impChart, debounce;
+
+    const els = {
+      product: $("product"), weather: $("weather"), objective: $("objective"),
+      hour: $("hour"), dow: $("dow"), temp: $("temp"), precip: $("precip"),
+      comp: $("comp"), guard: $("guard"), holiday: $("holiday"),
+    };
+
+    function payload() {
+      const p = PRODUCTS.find(x => x.product_id === els.product.value);
+      const base = p ? p.base_price : 180;
+      const mult = 1 + (+els.comp.value / 100);
+      return {
+        product_id: els.product.value,
+        hour: +els.hour.value,
+        day_of_week: +els.dow.value,
+        month: 4,
+        is_holiday: els.holiday.checked,
+        temperature: +els.temp.value,
+        precipitation: +els.precip.value,
+        weather_condition: els.weather.value,
+        competitor_1_price: +(base * 1.00 * mult).toFixed(2),
+        competitor_2_price: +(base * 1.05 * mult).toFixed(2),
+        competitor_3_price: +(base * 0.97 * mult).toFixed(2),
+        current_price: base,
+        objective: els.objective.value,
+        max_change_pct: +els.guard.value,
+      };
+    }
+
+    function syncLabels() {
+      $("hour-v").textContent = String(els.hour.value).padStart(2, "0") + ":00";
+      $("dow-v").textContent = DOW[+els.dow.value];
+      $("temp-v").textContent = els.temp.value + "°C";
+      $("precip-v").textContent = els.precip.value + " mm";
+      $("comp-v").textContent = (els.comp.value > 0 ? "+" : "") + els.comp.value + "%";
+      $("guard-v").textContent = "±" + els.guard.value + "%";
+      $("obj-label").textContent = els.objective.value;
+    }
+
+    let inflight = null;
+
+    async function refresh() {
+      syncLabels();
+      if (inflight) inflight.abort();
+      inflight = new AbortController();
+
+      try {
+        const res = await fetch("/predict/", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload()),
+          signal: inflight.signal,
+        });
+        if (!res.ok) {
+          const err = await res.json();
+          return showWarning(`API ${res.status}: ${JSON.stringify(err.detail)}`);
+        }
+        render(await res.json());
+      } catch (e) {
+        if (e.name === "AbortError") return;
+        showWarning("Could not reach the API. Is uvicorn running?");
+      }
+    }
+
+    function showWarning(msg) {
+      const w = $("warning");
+      w.textContent = msg;
+      w.classList.remove("hidden");
+    }
+
+    function render(d) {
+      const w = $("warning");
+      if (d.warning) {
+        w.textContent = "⚠ " + d.warning;
+        w.classList.remove("hidden");
+      } else {
+        w.classList.add("hidden");
+      }
+
+      $("cur-price").textContent = INRCURRENCY.format(d.current_price);
+      $("rec-price").textContent = INRCURRENCY.format(d.recommended_price);
+
+      const up = d.price_change_pct >= 0;
+      const delta = $("rec-delta");
+      delta.textContent = (up ? "▲ +" : "▼ ") + d.price_change_pct.toFixed(1) + "%";
+      delta.className = "mt-1 text-sm font-medium " + (up ? "text-emerald-300" : "text-rose-300");
+
+      $("demand").textContent = d.recommended_demand.toFixed(1) + " units";
+      const dd = d.recommended_demand - d.current_demand;
+      $("demand-delta").textContent = (dd >= 0 ? "+" : "") + dd.toFixed(1) + " vs current";
+
+      const lift = d.objective === "profit" ? d.profit_lift_pct : d.revenue_lift_pct;
+      const l = $("lift");
+      l.textContent = (lift >= 0 ? "+" : "") + lift.toFixed(1) + "%";
+      l.className = "mt-2 text-2xl font-semibold " + (lift >= 0 ? "text-emerald-300" : "text-rose-300");
+
+      $("elast").textContent = d.elasticity.toFixed(2);
+      $("elast-label").textContent = d.elasticity_label;
+      $("elast-note").textContent = d.elasticity < -1
+        ? `a 1% price rise costs ~${Math.abs(d.elasticity).toFixed(1)}% of demand`
+        : d.elasticity < 0
+        ? "demand barely reacts — room to raise price"
+        : "positive elasticity means confounding, not profit";
+
+      $("market-pill").textContent = d.warning ? "Watch list" : "Healthy signal";
+      $("insight-pill").textContent = d.elasticity < -1 ? "Sensitive demand" : "Steady demand";
+      drawCurve(d);
+    }
+
+    function initCurveChart() {
+      curveChart = new Chart($("curve"), {
+        type: "line",
+        data: {
+          labels: [],
+          datasets: [
+            { label: "Profit", data: [], borderColor: "#fb923c", backgroundColor: "rgba(251,146,60,.12)", fill: true, tension: 0.35, pointRadius: 0, borderWidth: 2.5, yAxisID: "y" },
+            { label: "Revenue", data: [], borderColor: "#a78bfa", borderDash: [5, 4], tension: 0.35, pointRadius: 0, borderWidth: 1.5, yAxisID: "y" },
+            { label: "Demand (units)", data: [], borderColor: "#38bdf8", tension: 0.35, pointRadius: 0, borderWidth: 2, yAxisID: "y1" },
+            { label: "Recommended", data: [], borderColor: "#10b981", backgroundColor: "#10b981", pointRadius: 6, showLine: false, yAxisID: "y" },
+          ],
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          animation: false,
+          devicePixelRatio: Math.min(window.devicePixelRatio || 1, 1.5),
+          resizeDelay: 100,
+          interaction: { mode: "index", intersect: false },
+          plugins: {
+            legend: { labels: { color: "#94a3b8", boxWidth: 12, font: { size: 11 } } },
+            tooltip: { callbacks: { title: c => "Price " + INRCURRENCY.format(Number(c[0].label)) } },
+          },
+          scales: {
+            x: { title: { display: true, text: "Candidate price (INR)", color: "#64748b" }, ticks: { color: "#64748b", maxTicksLimit: 8 }, grid: { color: "#1e293b" } },
+            y: { position: "left", title: { display: true, text: "₹", color: "#64748b" }, ticks: { color: "#64748b" }, grid: { color: "#1e293b" } },
+            y1: { position: "right", title: { display: true, text: "units", color: "#64748b" }, ticks: { color: "#64748b" }, grid: { drawOnChartArea: false } },
+          },
+        },
+      });
+    }
+
+    function drawCurve(d) {
+      const profit = d.curve.map(p => p.profit);
+      const peak = d.curve.reduce((best, p, i) =>
+        Math.abs(p.price - d.recommended_price) < Math.abs(d.curve[best].price - d.recommended_price) ? i : best, 0);
+      const peakY = Math.max(...profit) * 1.06;
+      const ds = curveChart.data.datasets;
+      curveChart.data.labels = d.curve.map(p => p.price.toFixed(1));
+      ds[0].data = profit;
+      ds[1].data = d.curve.map(p => p.revenue);
+      ds[2].data = d.curve.map(p => p.demand);
+      ds[3].data = d.curve.map((_, i) => (i === peak ? peakY : null));
+      curveChart.update("none");
+    }
+
+    function drawImportance(items) {
+      const top = items.slice(0, 8).reverse();
+      impChart = new Chart($("importance"), {
+        type: "bar",
+        data: {
+          labels: top.map(f => f.feature),
+          datasets: [{ data: top.map(f => f.importance), backgroundColor: "#38bdf8", borderRadius: 3 }],
+        },
+        options: {
+          indexAxis: "y", responsive: true, maintainAspectRatio: false, animation: false,
+          devicePixelRatio: Math.min(window.devicePixelRatio || 1, 1.5), resizeDelay: 100,
+          plugins: { legend: { display: false } },
+          scales: {
+            x: { ticks: { color: "#64748b", font: { size: 9 } }, grid: { color: "#1e293b" } },
+            y: { ticks: { color: "#94a3b8", font: { size: 9 } }, grid: { display: false } },
+          },
+        },
+      });
+    }
+
+    function renderMetrics(m) {
+      $("model-badge").innerHTML = `
+        <div class="text-sm font-semibold text-white">${m.selected_model.replace(/_/g, " ")}</div>
+        <div class="mt-1 text-sm text-slate-400">R² ${m.r2.toFixed(3)} · RMSE ${m.rmse.toFixed(2)}</div>`;
+
+      const tiles = [
+        ["R² (holdout)", m.r2.toFixed(3), "text-emerald-300"],
+        ["RMSE (units)", m.rmse.toFixed(2), "text-sky-300"],
+        ["Elasticity", m.price_elasticity.toFixed(2), "text-orange-300"],
+        ["vs. baseline", "+" + m.improvement_vs_baseline_pct.toFixed(1) + "%", "text-emerald-300"],
+      ];
+      $("metrics-grid").innerHTML = tiles.map(([k, v, c]) => `
+        <div class="rounded-2xl border border-slate-700/80 bg-slate-900/50 p-4">
+          <div class="text-[11px] font-semibold uppercase tracking-[0.28em] text-slate-400">${k}</div>
+          <div class="mt-2 text-xl font-semibold ${c}">${v}</div>
+        </div>`).join("");
+
+      $("truth-panel").innerHTML = `
+        <span class="text-white font-semibold">Ground-truth validation.</span>
+        The synthetic generator used a true elasticity of
+        <span class="font-mono text-white">${m.true_elasticity.toFixed(2)}</span>.
+        The model — never shown that number — estimated
+        <span class="font-mono text-white">${m.price_elasticity.toFixed(2)}</span>
+        (error ${m.elasticity_recovery_error.toFixed(2)}), and its per-row elasticity
+        tracks the true per-row elasticity at
+        <span class="font-mono text-white">r = ${m.elasticity_row_correlation.toFixed(3)}</span>.
+        That is what validates the estimator.`;
+
+      drawImportance(m.feature_importance);
+    }
+
+    const PRESETS = {
+      storm: { hour: 18, dow: 2, temp: 12, precip: 14, comp: 0, weather: "Stormy", holiday: false },
+      quiet: { hour: 3, dow: 6, temp: 16, precip: 0, comp: 0, weather: "Clear", holiday: false },
+      undercut: { hour: 18, dow: 2, temp: 21, precip: 0, comp: -25, weather: "Clear", holiday: false },
+      reset: { hour: 18, dow: 2, temp: 21, precip: 0, comp: 0, weather: "Clear", holiday: false },
+    };
+
+    function applyPreset(name) {
+      const p = PRESETS[name];
+      els.hour.value = p.hour;
+      els.dow.value = p.dow;
+      els.temp.value = p.temp;
+      els.precip.value = p.precip;
+      els.comp.value = p.comp;
+      els.weather.value = p.weather;
+      els.holiday.checked = p.holiday;
+      refresh();
+    }
+
+    (async function init() {
+      PRODUCTS = await (await fetch("/products/")) .json();
+      els.product.innerHTML = PRODUCTS
+        .map(p => `<option value="${p.product_id}">${p.product_id} (${INRCURRENCY.format(p.base_price)})</option>`)
+        .join("");
+
+      initCurveChart();
+      renderMetrics(await (await fetch("/metrics/")).json());
+
+      Object.values(els).forEach(el =>
+        el.addEventListener("input", () => {
+          syncLabels();
+          clearTimeout(debounce);
+          debounce = setTimeout(refresh, 90);
+        }));
+
+      document.querySelectorAll(".preset").forEach(b =>
+        b.addEventListener("click", () => applyPreset(b.dataset.preset)));
+
+      refresh();
+    })();
+  </script>
+</body>
+</html>

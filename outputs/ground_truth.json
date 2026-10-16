@@ -1,0 +1,9 @@
+{
+  "mean_true_own_price_elasticity": -1.7871,
+  "base_elasticity": -2.1,
+  "rush_shift": 0.55,
+  "rain_shift": 0.3,
+  "true_cross_price_elasticity": 0.9,
+  "formula": "e_i = base + rush_shift*rush_intensity + rain_shift*is_raining",
+  "note": "The model never sees these. evaluate.py checks recovery."
+}

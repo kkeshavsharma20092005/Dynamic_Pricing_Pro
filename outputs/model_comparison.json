@@ -1,0 +1,38 @@
+{
+  "results": {
+    "linear_regression": {
+      "cv_rmse": 8.285714853767844,
+      "test_rmse": 8.735247570287594,
+      "test_r2": 0.9377282864319358,
+      "best_params": {
+        "model__alpha": "0.01"
+      },
+      "fit_seconds": 3.3
+    },
+    "random_forest": {
+      "cv_rmse": 12.791849370360005,
+      "test_rmse": 14.006734196707018,
+      "test_r2": 0.8843812882876818,
+      "best_params": {
+        "model__max_depth": "None",
+        "model__max_features": "0.5",
+        "model__min_samples_leaf": "1"
+      },
+      "fit_seconds": 92.3
+    },
+    "gradient_boosting": {
+      "cv_rmse": 10.84018460087744,
+      "test_rmse": 11.516227794815993,
+      "test_r2": 0.9147771682974193,
+      "best_params": {
+        "model__learning_rate": "0.08",
+        "model__max_depth": "3",
+        "model__n_estimators": "250",
+        "model__subsample": "0.9"
+      },
+      "fit_seconds": 49.3
+    }
+  },
+  "winner": "linear_regression",
+  "baseline_rmse": 35.89565473504322
+}

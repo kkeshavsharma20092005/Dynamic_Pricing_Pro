@@ -1,0 +1,18 @@
+# Render Blueprint. With this file in the repo root, Render configures the service
+# automatically — no clicking through the dashboard, and the config is version-controlled.
+#
+# Deploy: https://dashboard.render.com/blueprints -> New Blueprint Instance -> pick this repo.
+services:
+  - type: web
+    name: dynamic-pricing-engine
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: free
+    region: oregon
+
+    # Render polls this after every deploy. It is cheap and never touches the model, so
+    # it answers in ~1 ms. Pointing a health check at /predict/ would run inference on
+    # every poll and waste the free tier's compute.
+    healthCheckPath: /health/
+
+    autoDeploy: true
