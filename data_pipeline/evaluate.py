@@ -86,12 +86,15 @@ def main():
     baseline = np.full(len(y_te), train[TARGET].mean())
     base_rmse = root_mean_squared_error(y_te, baseline)
 
+    # Every model train.py fitted, with the CV scores that decide the winner below.
+    trained = json.loads((OUTPUT_DIR / "model_comparison.json").read_text())["results"]
+
     report = {}
     print("=" * 84)
     print(f"{'model':<22}{'RMSE':>9}{'R2':>9}{'vs base':>10}{'ELASTICITY':>13}{'% rows -ve':>13}")
     print("=" * 84)
 
-    for name in ["linear_regression", "random_forest", "gradient_boosting"]:
+    for name in trained:
         model = joblib.load(MODEL_DIR / f"{name}.pkl")
         pred = np.clip(np.expm1(model.predict(test[FEATURES])), 0, None)
 
@@ -137,7 +140,8 @@ def main():
         raise SystemExit("No model produced a usable demand curve. The optimiser would "
                          "have nothing to climb. Stop and fix the features.")
 
-    winner = min(usable, key=lambda k: usable[k]["rmse"])
+    # Among usable models, pick on CV. Picking on test RMSE would be test-set peeking.
+    winner = min(usable, key=lambda k: trained[k]["cv_rmse"])
     print(f"\nSELECTED: {winner}")
     for r in set(report) - set(usable):
         print(f"  rejected {r}: only "
@@ -163,6 +167,8 @@ def main():
         "Off-peak (22-05)": t.hour.isin([22, 23, 0, 1, 2, 3, 4, 5]),
         "Raining": t.is_raining == 1,
         "Dry": t.is_raining == 0,
+        "Snowing": t.is_snowing == 1,
+        "Yatra period": t.pilgrim_index > 0,
         "Weekend": t.is_weekend == 1,
         "Weekday": t.is_weekend == 0,
     }

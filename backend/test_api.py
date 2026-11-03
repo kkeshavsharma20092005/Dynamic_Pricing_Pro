@@ -1,20 +1,26 @@
 """End-to-end API test. Run: python backend/test_api.py"""
+import os
 import sys
+import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "data_pipeline"))
+
+# Never touch the real app database from a test run.
+_tmp = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
+os.environ["APP_DB_PATH"] = os.path.join(_tmp.name, "test.db")
 
 from fastapi.testclient import TestClient
 
 from main import app
 
 BASE = {
-    "product_id": "SKU-MINI-CAB",
+    "product_id": "JMU-CAB",
     "hour": 18, "day_of_week": 2, "month": 4, "is_holiday": False,
     "temperature": 28.0, "precipitation": 0.0, "weather_condition": "Clear",
-    # Prices are in INR (₹). SKU-MINI-CAB fares sit around ₹180.
-    "competitor_1_price": 180.0, "competitor_2_price": 188.0, "competitor_3_price": 176.0,
+    # Prices are in INR (₹). JMU-CAB fares sit around ₹180.
+    "competitor_1_price": 220.0, "competitor_2_price": 231.0, "competitor_3_price": 213.0,
 }
 
 with TestClient(app) as c:
@@ -43,10 +49,10 @@ with TestClient(app) as c:
         "Baseline (dry, 6pm, weekday)": {},
         "STORM (heavy rain)": {"precipitation": 12.0, "weather_condition": "Stormy"},
         "Off-peak (3am, dry)": {"hour": 3},
-        "Competitors +15%": {"competitor_1_price": 207.0, "competitor_2_price": 216.2,
-                             "competitor_3_price": 202.4},
-        "Competitors -15%": {"competitor_1_price": 153.0, "competitor_2_price": 159.8,
-                             "competitor_3_price": 149.6},
+        "Competitors +15%": {"competitor_1_price": 253.0, "competitor_2_price": 265.6,
+                             "competitor_3_price": 245.0},
+        "Competitors -15%": {"competitor_1_price": 187.0, "competitor_2_price": 196.4,
+                             "competitor_3_price": 181.0},
         "Holiday rush + rain": {"is_holiday": True, "precipitation": 8.0,
                                 "weather_condition": "Rainy"},
         "Freezing (2C)": {"temperature": 2.0},

@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#000000" />
+  <title>Raahi Admin</title>
+  <link rel="icon" href="/static/icons/icon-192.png" />
+  <link rel="stylesheet" href="/static/app.css" />
+</head>
+<body>
+  <header class="topbar">
+    <h1><a href="/" id="title"></a></h1>
+    <button id="lang" type="button"></button>
+    <button id="logout" type="button" class="hidden"></button>
+  </header>
+  <div id="offline" class="banner hidden" role="status"></div>
+  <div id="auth" class="auth-photo"><div id="auth-form"></div><div id="auth-credit" class="auth-credit"></div></div>
+  <main id="app" class="admin hidden">
+    <div id="admin-banner"></div>
+    <div id="stats" class="cards" style="margin-top:12px"></div>
+
+    <section class="section">
+      <h2>Conditions by region</h2>
+      <p class="muted">These feed the pricing engine for new quotes. A closed region blocks trips between regions that pass through it.</p>
+      <div class="row" id="presets" style="flex-wrap:wrap"></div>
+      <div id="preview" class="cards" style="margin-top:10px" aria-live="polite"></div>
+      <div id="regions" class="grid3" style="margin-top:10px"></div>
+    </section>
+
+    <section class="section">
+      <h2>Fair-price limits</h2>
+      <p class="muted">The highest multiplier a rider can be charged. The hardship limit applies during snow, storms and road closures.</p>
+      <form id="caps" class="row" style="max-width:480px;align-items:end"></form>
+      <div id="caps-note" class="muted"></div>
+    </section>
+
+    <section class="section">
+      <h2>Assumed rival rates</h2>
+      <p class="muted">These are placeholder rates, not Rapido or Uber prices. Riders see them only as labelled estimates, and the pricing engine reads them as rival prices.</p>
+      <div id="rival-rates" class="grid3"></div>
+    </section>
+
+    <section class="section">
+      <h2>Pricing strategy comparison</h2>
+      <p id="sim-note" class="muted"></p>
+      <div class="card">
+        <h3>Profit change vs. fixed fares</h3>
+        <div class="chart-box"><canvas id="sim-chart" role="img" aria-label="Profit change of each pricing strategy compared with fixed fares. The same values are in the table below."></canvas></div>
+      </div>
+      <div class="card" style="margin-top:10px;overflow-x:auto"><table id="sim-table"></table></div>
+      <div class="row" style="max-width:220px;margin-top:10px"><button id="sim-export" type="button" class="secondary">Download CSV</button></div>
+    </section>
+
+    <section class="section">
+      <h2>Recent rides</h2>
+      <div class="card" style="overflow-x:auto"><table id="recent"></table></div>
+    </section>
+  </main>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script src="/static/common.js"></script>
+  <script src="/static/admin.js"></script>
+</body>
+</html>

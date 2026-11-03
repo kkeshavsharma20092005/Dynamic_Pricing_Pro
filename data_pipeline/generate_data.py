@@ -1,5 +1,5 @@
 """
-STEP 1 - Synthetic data generation.
+STEP 1 - Synthetic data generation for a Jammu & Kashmir ride market.
 
 Anyone can emit random numbers. What makes a synthetic dataset worth modelling is
 that it contains a REAL structure to be recovered, plus the REAL traps that make
@@ -26,18 +26,23 @@ TRAP 3 - COUNT NOISE.
     variance scales with the mean, exactly like real sales.
 
 GROUND TRUTH: demand is built as a log-linear function of price, so every row's true
-own-price elasticity is known EXACTLY (see config.TRUE_BASE_ELASTICITY and its rush/rain
-shifts). It is written to the CSV as `true_elasticity` for auditing, and it is listed in
+own-price elasticity is known EXACTLY (see config.TRUE_BASE_ELASTICITY and its shifts).
+It is written to the CSV as `true_elasticity` for auditing, and it is listed in
 features.FORBIDDEN so it can never be used as a model input. It is the answer key.
+
+This is assumed behaviour, not observed J&K ride data: the climate, calendar and fares
+encode the assumptions listed in config.py and season.py.
 """
 import json
 
 import numpy as np
 import pandas as pd
 
-from config import (GROUND_TRUTH_JSON, HOURS, PRODUCTS, RAW_CSV, SEED, START,
+from config import (GROUND_TRUTH_JSON, HOURS, PRODUCTS, RAW_CSV, REGIONS, SEED, START,
                     TRUE_BASE_ELASTICITY, TRUE_CROSS_ELASTICITY,
-                    TRUE_RAIN_ELASTICITY_SHIFT, TRUE_RUSH_ELASTICITY_SHIFT)
+                    TRUE_PILGRIM_ELASTICITY_SHIFT, TRUE_RAIN_ELASTICITY_SHIFT,
+                    TRUE_RUSH_ELASTICITY_SHIFT, TRUE_SNOW_ELASTICITY_SHIFT)
+from season import is_holiday, pilgrim_index, tourist_index
 
 rng = np.random.default_rng(SEED)
 
@@ -45,7 +50,8 @@ rng = np.random.default_rng(SEED)
 # --------------------------------------------------------------------------
 # Exogenous world: time and weather happen to us; we do not choose them.
 # --------------------------------------------------------------------------
-def build_world() -> pd.DataFrame:
+def build_world(region: str) -> pd.DataFrame:
+    spec = REGIONS[region]
     ts = pd.date_range(START, periods=HOURS, freq="h")
     w = pd.DataFrame({"timestamp": ts})
     w["hour"] = w.timestamp.dt.hour
@@ -60,39 +66,35 @@ def build_world() -> pd.DataFrame:
         + 1.15 * np.exp(-0.5 * ((w.hour - 18) / 2.0) ** 2)
     )
 
-    # Temperature: INDIAN METRO CLIMATE. Warm winters, hot pre-monsoon build-up.
-    # The seasonal term climbs from the mid-teens in January to the low-30s by May;
-    # add a day/night cycle and hourly noise on top.
-    season = 10.0 * np.sin(2 * np.pi * (w.day_of_year - 75) / 365.25)
-    daily = 4.5 * np.sin(2 * np.pi * (w.hour - 9) / 24)
-    w["temperature"] = 25.0 + season + daily + rng.normal(0, 2.2, len(w))
+    # Hottest in mid-July, coldest in mid-January, plus a day/night cycle and noise.
+    season = spec["temp_season"] * np.sin(2 * np.pi * (w.day_of_year - 105) / 365.25)
+    daily = spec["temp_daily"] * np.sin(2 * np.pi * (w.hour - 9) / 24)
+    w["temperature"] = spec["temp_mean"] + season + daily + rng.normal(0, 2.2, len(w))
 
-    # Rain arrives in multi-hour fronts, not as independent hourly coin flips.
-    front = rng.random(len(w)) < 0.05
+    # Rain arrives in multi-hour fronts: more in the monsoon, and in winter when
+    # western disturbances bring snow to the valley and the high roads.
+    monsoon = w.day_of_year.between(182, 258)
+    winter = w.month.isin([12, 1, 2, 3])
+    front_prob = spec["rain_front_prob"] * np.where(
+        monsoon, spec["monsoon_factor"], np.where(winter, spec["winter_factor"], 1.0))
+    front = rng.random(len(w)) < front_prob
     front = pd.Series(front).rolling(6, min_periods=1).max().astype(bool).values
-    w["precipitation"] = np.where(
-        front, rng.gamma(2.0, 1.8, len(w)), 0.0
-    ).round(2)
+    w["precipitation"] = np.where(front, rng.gamma(2.0, 1.8, len(w)), 0.0).round(2)
 
     w["weather_condition"] = pd.cut(
         w.precipitation, bins=[-0.01, 0.01, 2.0, 6.0, np.inf],
         labels=["Clear", "Cloudy", "Rainy", "Stormy"],
     ).astype(str)
+    is_snowing = (w.precipitation > 0.1) & (w.temperature <= 1.0)
+    w.loc[is_snowing, "weather_condition"] = "Snowy"
 
-    # INDIAN FESTIVALS & PUBLIC HOLIDAYS falling in the Jan-May 2024 window. Mobility
-    # demand spikes on these days: people travel across the city to celebrate, shop and
-    # visit family. Keys are day-of-year for 2024 (a leap year).
-    festivals = {
-        1:   "New Year's Day",
-        26:  "Republic Day",     # 26 Jan
-        68:  "Maha Shivaratri",  # 08 Mar
-        85:  "Holi",             # 25 Mar
-        89:  "Good Friday",      # 29 Mar
-        102: "Eid-ul-Fitr",      # 11 Apr
-        108: "Ram Navami",       # 17 Apr
-        122: "Labour Day",       # 01 May
-    }
-    w["is_holiday"] = w.day_of_year.isin(festivals).astype(int)
+    # A heavy storm closes exposed roads, and they take half a day to reopen.
+    hazard = (w.precipitation >= 6.0) if spec["closure_prone"] else pd.Series(False, index=w.index)
+    w["road_closed"] = hazard.astype(int).rolling(12, min_periods=1).max().astype(int)
+
+    w["is_holiday"] = is_holiday(w.day_of_year)
+    w["pilgrim_index"] = pilgrim_index(region, w.day_of_year)
+    w["tourist_index"] = tourist_index(region, w.month)
     return w
 
 
@@ -106,28 +108,31 @@ def demand_drivers(w: pd.DataFrame) -> np.ndarray:
         0.85 * w.rush_intensity
         + 0.22 * w.is_weekend
         + 0.40 * w.is_holiday
+        + 0.55 * w.pilgrim_index
+        + 0.35 * w.tourist_index
+        - 0.50 * w.road_closed
         # Rain pushes people into paid transport - a genuine demand lift.
         + 0.030 * w.precipitation
         # Comfort curve: demand peaks near 21C and falls off in either direction.
-        - 0.0022 * (w.temperature - 21.0) ** 2
+        - 0.0015 * (w.temperature - 21.0) ** 2
         # Mild upward drift over the period.
-        + 0.00018 * np.arange(len(w))
+        + 0.00006 * np.arange(len(w))
     ).to_numpy()
 
 
 def generate() -> pd.DataFrame:
-    world = build_world()
-    drivers = demand_drivers(world)
+    worlds = {region: build_world(region) for region in REGIONS}
     frames = []
 
     for sku, spec in PRODUCTS.items():
-        d = world.copy()
+        d = worlds[spec["region"]].copy()
+        drivers = demand_drivers(d)
         d["product_id"] = sku
         d["unit_cost"] = spec["cost"]
         base_p, base_q = spec["base_price"], spec["base_demand"]
 
-        # ---- COMPETITORS: three rivals drifting around the base price ----
-        drift = np.cumsum(rng.normal(0, 0.004, len(d)))          # slow market drift
+        # ---- COMPETITORS: three local rivals drifting around the base price ----
+        drift = np.cumsum(rng.normal(0, 0.0015, len(d)))         # slow market drift
         comps = []
         for i in range(1, 4):
             offset = rng.normal(1.0 + 0.03 * (i - 2), 0.05)
@@ -153,14 +158,18 @@ def generate() -> pd.DataFrame:
         d["our_price"] = np.clip(price, spec["cost"] * 1.05, base_p * 1.9).round(2)
 
         # ---- TRUE DEMAND EQUATION ----
-        # Elasticity is context-dependent: rush hour and rain make customers LESS
-        # price-sensitive (elasticity closer to zero). We record the exact per-row
-        # elasticity so evaluate.py can check the model recovers the whole PATTERN,
-        # not merely an average.
+        # Elasticity is context-dependent: rush hour, rain, snow and yatra crowds make
+        # customers LESS price-sensitive (elasticity closer to zero). We record the
+        # exact per-row elasticity so evaluate.py can check the model recovers the
+        # whole PATTERN, not merely an average.
+        is_wet = (d.precipitation > 0.1).astype(float)
+        is_snowing = ((d.precipitation > 0.1) & (d.temperature <= 1.0)).astype(float)
         d["true_elasticity"] = (
             TRUE_BASE_ELASTICITY
             + TRUE_RUSH_ELASTICITY_SHIFT * d.rush_intensity
-            + TRUE_RAIN_ELASTICITY_SHIFT * (d.precipitation > 0.1).astype(float)
+            + TRUE_RAIN_ELASTICITY_SHIFT * is_wet
+            + TRUE_SNOW_ELASTICITY_SHIFT * is_snowing
+            + TRUE_PILGRIM_ELASTICITY_SHIFT * d.pilgrim_index
         )
 
         log_q = (
@@ -195,7 +204,7 @@ def generate() -> pd.DataFrame:
 
 def main():
     df = generate()
-    df.to_csv(RAW_CSV, index=False)
+    df.to_csv(RAW_CSV, index=False, float_format="%.4f")
 
     # The exact average true elasticity across the generated data. `true_elasticity`
     # is written to the CSV for auditing but is NEVER a model feature (see
@@ -207,8 +216,11 @@ def main():
         "base_elasticity": TRUE_BASE_ELASTICITY,
         "rush_shift": TRUE_RUSH_ELASTICITY_SHIFT,
         "rain_shift": TRUE_RAIN_ELASTICITY_SHIFT,
+        "snow_shift": TRUE_SNOW_ELASTICITY_SHIFT,
+        "pilgrim_shift": TRUE_PILGRIM_ELASTICITY_SHIFT,
         "true_cross_price_elasticity": TRUE_CROSS_ELASTICITY,
-        "formula": "e_i = base + rush_shift*rush_intensity + rain_shift*is_raining",
+        "formula": ("e_i = base + rush_shift*rush_intensity + rain_shift*is_wet "
+                    "+ snow_shift*is_snowing + pilgrim_shift*pilgrim_index"),
         "note": "The model never sees these. evaluate.py checks recovery.",
     }, indent=2))
 
@@ -217,7 +229,8 @@ def main():
           f"range {df.true_elasticity.min():+.2f} .. {df.true_elasticity.max():+.2f}")
     print(f"  products : {df.product_id.nunique()}")
     print(f"  span     : {df.timestamp.min()} .. {df.timestamp.max()}")
-    print(f"  weather  : {dict(df.weather_condition.value_counts())}")
+    print(f"  weather  : { {k: int(v) for k, v in df.weather_condition.value_counts().items()} }")
+    print(f"  road closed: {df.road_closed.mean() * 100:.1f}% of rows")
     print(f"  units    : mean {df.units_sold.mean():.1f}, "
           f"min {df.units_sold.min()}, max {df.units_sold.max()}")
     print(f"  missing  : {df.isna().sum().sum()}")
@@ -230,7 +243,9 @@ def main():
     lp, lq = np.log(d.our_price), np.log(d.units_sold)
     TRUE = mean_true
 
-    naive = np.polyfit(lp, lq, 1)[0]
+    # Within a product, so the price gap between a bike and a cab is not read as demand.
+    within = lambda s: s - s.groupby(d.product_id).transform("mean")
+    naive = np.polyfit(within(lp), within(lq), 1)[0]
 
     # Control for the confounders by partialling them out of BOTH price and demand.
     from sklearn.linear_model import LinearRegression
@@ -242,19 +257,19 @@ def main():
 
     dummies = pd.get_dummies(
         d[["hour", "day_of_week", "product_id"]].astype(str)).to_numpy(float)
+    calendar = np.column_stack([
+        d.precipitation, d.is_holiday, d.pilgrim_index, d.tourist_index, d.road_closed,
+        np.log(d.competitor_min_price),
+    ])
 
     # Partial controls: temperature enters LINEARLY, and the time drift is missing.
-    partial = partial_out(np.column_stack([
-        dummies, d.precipitation, d.temperature, d.is_holiday,
-        np.log(d.competitor_min_price),
-    ]))
+    partial = partial_out(np.column_stack([dummies, calendar, d.temperature]))
 
     # Full controls: temperature is QUADRATIC in the true demand equation, and the
     # drift is real. Get the functional form wrong and the omitted piece leaks
     # straight into the price coefficient.
     full = partial_out(np.column_stack([
-        dummies, d.precipitation, d.temperature, (d.temperature - 21.0) ** 2,
-        d.is_holiday, np.log(d.competitor_min_price), d.time_index,
+        dummies, calendar, d.temperature, (d.temperature - 21.0) ** 2, d.time_index,
     ]))
 
     print(f"  TRUE elasticity (ground truth)      : {TRUE:+.2f}")
@@ -265,7 +280,7 @@ def main():
     print(f"  Controls, correct functional form   : {full:+.2f}   "
           f"(off by {abs(full - TRUE):.2f})  <- recovers the truth")
     print("\n  Two lessons the naive number hides:")
-    print("   1. Omitting a confounder biases elasticity (-0.47 vs -1.80).")
+    print(f"   1. Omitting a confounder biases elasticity ({naive:+.2f} vs {TRUE:+.2f}).")
     print("   2. Including it with the WRONG SHAPE still biases it. Temperature")
     print("      affects demand quadratically; modelling it linearly leaves bias behind.")
     print("  This is why features.py encodes temp_comfort and cyclical time explicitly.")

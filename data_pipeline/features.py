@@ -7,8 +7,7 @@ correctness requirement, not code tidiness.
 WHY, CONCRETELY:
 The pricing engine works by asking the model "how many rides at ₹180? at ₹190? at ₹200?"
 Every one of those questions changes `our_price` - and therefore also changes
-`competitor_price_ratio`, `price_gap_vs_min`, `log_price`, `is_cheapest`, and
-`margin_pct`. If the engine only swapped `our_price` and left the ratios at their
+`competitor_price_ratio`, `price_gap_vs_min`, `log_price`, and `margin_pct`. If the engine only swapped `our_price` and left the ratios at their
 old values, it would score a row that CANNOT EXIST: a ride priced at ₹200 whose
 price-to-competitor ratio still says ₹180. The model would return confident nonsense
 and the optimiser would climb a fake curve.
@@ -67,14 +66,15 @@ NUMERIC = [
     "competitor_price_ratio",      # our_price / competitor_min_price
     "competitor_mean_ratio",       # our_price / competitor_mean_price
     "price_gap_vs_min",            # absolute ₹ gap
-    "is_cheapest",                 # binary: are we the cheapest on screen?
     "competitor_spread",           # how tightly clustered is the market?
     "competitor_min_price", "competitor_mean_price",
     # --- WEATHER ---
     "temperature", "precipitation",
     "temp_comfort",                # quadratic comfort curve, peaks at 21C
     "weather_demand_index",        # composite demand shifter
-    "is_raining",
+    "is_raining", "is_snowing",
+    # --- J&K CONTEXT ---
+    "road_closed", "pilgrim_index", "tourist_index",
     # --- CYCLICAL TIME ---
     "hour_sin", "hour_cos", "dow_sin", "dow_cos", "month_sin", "month_cos",
     "rush_intensity", "is_weekend", "is_holiday", "time_index",
@@ -86,6 +86,7 @@ NUMERIC = [
     # Without them a linear model can only ever fit ONE global slope, and the whole
     # premise of dynamic pricing - that sensitivity changes hour to hour - is lost.
     "rush_x_logprice", "rain_x_logprice", "weekend_x_logprice",
+    "snow_x_logprice", "pilgrim_x_logprice",
     # --- MARGIN ---
     "margin_pct", "unit_cost",
     # --- DEMAND HISTORY (known at pricing time; shifted, so never leakage) ---
@@ -128,14 +129,14 @@ def engineer(df: pd.DataFrame) -> pd.DataFrame:
     d["competitor_price_ratio"] = price / cmin      # THE decisive feature
     d["competitor_mean_ratio"] = price / cmean
     d["price_gap_vs_min"] = price - cmin
-    d["is_cheapest"] = (price <= cmin).astype(int)
 
     # ---------- WEATHER ----------
     # Quadratic, not linear. Demand peaks at a comfortable temperature and falls off
     # in BOTH directions; a linear term cannot express that and leaves elasticity
-    # biased (generate_data.py demonstrates this costing 0.38 of elasticity).
+    # biased (generate_data.py measures what this costs in elasticity).
     d["temp_comfort"] = -((d["temperature"] - IDEAL_TEMP_C) ** 2) / 100.0
     d["is_raining"] = (d["precipitation"] > 0.1).astype(int)
+    d["is_snowing"] = ((d["precipitation"] > 0.1) & (d["temperature"] <= 1.0)).astype(int)
 
     # Composite demand shifter: rain lifts demand, temperature discomfort suppresses it.
     d["weather_demand_index"] = (
@@ -171,6 +172,8 @@ def engineer(df: pd.DataFrame) -> pd.DataFrame:
     d["rush_x_logprice"] = d["rush_intensity"] * d["log_price"]
     d["rain_x_logprice"] = d["is_raining"] * d["log_price"]
     d["weekend_x_logprice"] = d["is_weekend"] * d["log_price"]
+    d["snow_x_logprice"] = d["is_snowing"] * d["log_price"]
+    d["pilgrim_x_logprice"] = d["pilgrim_index"] * d["log_price"]
 
     # ---------- MARGIN ----------
     d["margin_pct"] = (price - d["unit_cost"]) / price
@@ -178,9 +181,28 @@ def engineer(df: pd.DataFrame) -> pd.DataFrame:
     return d
 
 
+def parse_timestamps(s: pd.Series) -> pd.Series:
+    """
+    Parse timestamps with an explicit format, never a guess.
+
+    Excel rewrites ISO dates as DD-MM-YYYY when a CSV is re-saved. read_csv's
+    parse_dates then silently leaves them as text, and text sorts 31 March after
+    1 May, so "the latest hour" and every chronological split would be wrong.
+    """
+    try:
+        return pd.to_datetime(s, format="ISO8601")
+    except ValueError:
+        return pd.to_datetime(s, format="%d-%m-%Y %H:%M")
+
+
+def read_raw(path) -> pd.DataFrame:
+    df = pd.read_csv(path)
+    df["timestamp"] = parse_timestamps(df["timestamp"])
+    return df
+
+
 def load(path) -> pd.DataFrame:
-    df = pd.read_csv(path, parse_dates=["timestamp"])
-    df = engineer(df)
+    df = engineer(read_raw(path))
     return df.sort_values("timestamp").reset_index(drop=True)
 
 

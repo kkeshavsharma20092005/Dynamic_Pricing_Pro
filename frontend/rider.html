@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#000000" />
+  <title>Raahi - Jammu & Kashmir</title>
+  <link rel="manifest" href="/static/manifest.webmanifest" />
+  <link rel="icon" href="/static/icons/icon-192.png" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="stylesheet" href="/static/app.css" />
+</head>
+<body>
+  <header class="topbar">
+    <h1><a href="/" id="title"></a></h1>
+    <button id="lang" type="button"></button>
+    <button id="logout" type="button" class="hidden"></button>
+  </header>
+  <div id="offline" class="banner hidden" role="status"></div>
+  <div id="auth" class="auth-photo"><div id="auth-form"></div><div id="auth-credit" class="auth-credit"></div></div>
+  <div id="app" class="layout hidden">
+    <div id="map"></div>
+    <div id="panel" class="panel stack"></div>
+  </div>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="/static/common.js"></script>
+  <script src="/static/chat.js"></script>
+  <script src="/static/rider.js"></script>
+</body>
+</html>

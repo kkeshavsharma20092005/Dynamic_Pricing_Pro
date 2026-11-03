@@ -17,10 +17,11 @@ class WeatherCondition(str, Enum):
     cloudy = "Cloudy"
     rainy = "Rainy"
     stormy = "Stormy"
+    snowy = "Snowy"
 
 
 class PredictRequest(BaseModel):
-    product_id: str = Field(..., description="e.g. SKU-MINI-CAB")
+    product_id: str = Field(..., description="e.g. JMU-CAB")
 
     # --- time ---
     hour: int = Field(..., ge=0, le=23, description="Hour of day, 0-23")
@@ -32,6 +33,11 @@ class PredictRequest(BaseModel):
     temperature: float = Field(..., ge=-30, le=55, description="Celsius")
     precipitation: float = Field(..., ge=0, le=100, description="mm/hour")
     weather_condition: WeatherCondition = WeatherCondition.clear
+
+    # --- J&K context ---
+    road_closed: bool = False
+    pilgrim_index: float = Field(0.0, ge=0, le=1, description="0 = none, 1 = peak yatra")
+    tourist_index: float = Field(0.2, ge=0, le=1, description="0.2 = off season, 1 = peak")
 
     # --- competitors --- (prices are in INR; the ceiling is high enough for ₹ scale)
     competitor_1_price: float = Field(..., gt=0, le=1_000_000)
@@ -56,7 +62,7 @@ class PredictRequest(BaseModel):
                      "for every product, forever. Profit has a cost floor, so it has a "
                      "genuine interior peak."))
     max_change_pct: float = Field(
-        30.0, ge=1, le=60,
+        40.0, ge=1, le=60,
         description=("Guardrail. The model has never seen a price far outside its "
                      "training range, so do not let it recommend one."))
 

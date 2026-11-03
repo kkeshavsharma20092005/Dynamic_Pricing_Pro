@@ -8,9 +8,11 @@ import numpy as np
 import pandas as pd
 
 from config import METRICS_JSON, MODEL_PKL, PRODUCTS, RAW_CSV, TARGET
-from features import FEATURES, engineer, load
+from features import FEATURES, chronological_split, engineer, load, read_raw
 
 GRID_POINTS = 121
+LAG_PROFILE_DAYS = 28
+HOURS_PER_WEEK = 168
 
 
 def apply_log_smearing(log_pred: np.ndarray, residual_variance: float) -> np.ndarray:
@@ -27,20 +29,43 @@ class PricingEngine:
         # Recent history supplies the demand lags. These are legitimate inputs: when
         # you set the next hour's price, last hour's sales are already a fact. The API
         # caller should not have to know them, so we look them up per product.
-        hist = pd.read_csv(RAW_CSV, parse_dates=["timestamp"])
-        self.lags = (hist.sort_values("timestamp")
-                         .groupby("product_id")
-                         .agg(demand_lag_1h=("units_sold", "last"),
-                              demand_lag_24h=("units_sold", "last"),
-                              demand_roll_24h=("units_sold", lambda s: s.tail(24).mean()),
-                              time_index=("units_sold", "size"))
-                         .to_dict("index"))
+        hist = read_raw(RAW_CSV)
+        self.lags = self._build_lag_table(hist)
+        self.time_index = hist.groupby("product_id").size().to_dict()
         self.products = sorted(hist.product_id.unique())
         self.log_residual_variance = self._estimate_log_residual_variance()
 
+    @staticmethod
+    def _build_lag_table(hist: pd.DataFrame) -> dict:
+        """
+        Typical lags for every product and hour of the week.
+
+        A request describes a scenario, not the moment the history ends, so one fixed
+        "latest" value would give 3am the sales of whatever hour the data stops at.
+        Each scenario instead gets the recent average for the hours before it.
+        """
+        recent = hist[hist.timestamp > hist.timestamp.max() - pd.Timedelta(days=LAG_PROFILE_DAYS)]
+        typical = recent.groupby(["product_id", "is_weekend", "hour"]).units_sold.mean().to_dict()
+
+        def units_before(product_id, hour_of_week, hours_back):
+            day, hour = divmod((hour_of_week - hours_back) % HOURS_PER_WEEK, 24)
+            return typical[(product_id, int(day >= 5), hour)]
+
+        table = {}
+        for product_id in hist.product_id.unique():
+            for hour_of_week in range(HOURS_PER_WEEK):
+                table[(product_id, hour_of_week)] = {
+                    "demand_lag_1h": units_before(product_id, hour_of_week, 1),
+                    "demand_lag_24h": units_before(product_id, hour_of_week, 24),
+                    "demand_roll_24h": np.mean(
+                        [units_before(product_id, hour_of_week, k) for k in range(1, 25)]),
+                }
+        return table
+
     def _estimate_log_residual_variance(self) -> float:
         """Estimate the residual variance in log-space so back-transformed demand is unbiased."""
-        df = load(RAW_CSV)
+        # Training rows only: the holdout stays unseen, as it was when the model was fitted.
+        df, _ = chronological_split(load(RAW_CSV))
         log_y = np.log1p(df[TARGET])
         pred_log = self.model.predict(df[FEATURES])
         variance = float(np.var(log_y - pred_log, ddof=1))
@@ -54,7 +79,7 @@ class PricingEngine:
             raise KeyError(f"Unknown product_id '{req.product_id}'. "
                            f"Known: {', '.join(self.products)}")
 
-        lag = self.lags.get(req.product_id, {})
+        lag = self.lags[(req.product_id, req.day_of_week * 24 + req.hour)]
         price = req.current_price if req.current_price is not None else spec["base_price"]
         cost = req.unit_cost if req.unit_cost is not None else spec["cost"]
 
@@ -75,13 +100,16 @@ class PricingEngine:
             "temperature": float(req.temperature),
             "precipitation": float(req.precipitation),
             "weather_condition": req.weather_condition.value,
+            "road_closed": int(req.road_closed),
+            "pilgrim_index": float(req.pilgrim_index),
+            "tourist_index": float(req.tourist_index),
             "competitor_1_price": float(req.competitor_1_price),
             "competitor_2_price": float(req.competitor_2_price),
             "competitor_3_price": float(req.competitor_3_price),
-            "demand_lag_1h": float(lag.get("demand_lag_1h", 20)),
-            "demand_lag_24h": float(lag.get("demand_lag_24h", 20)),
-            "demand_roll_24h": float(lag.get("demand_roll_24h", 20)),
-            "time_index": float(lag.get("time_index", 0)),
+            "demand_lag_1h": float(lag["demand_lag_1h"]),
+            "demand_lag_24h": float(lag["demand_lag_24h"]),
+            "demand_roll_24h": float(lag["demand_roll_24h"]),
+            "time_index": float(self.time_index[req.product_id]),
         })
 
     # ------------------------------------------------------------------ inference

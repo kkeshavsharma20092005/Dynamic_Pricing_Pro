@@ -1,138 +1,142 @@
 {
   "models": {
     "linear_regression": {
-      "rmse": 8.735247570287594,
-      "r2": 0.940467780906551,
-      "improvement_vs_baseline_pct": 75.66488859232372,
-      "price_elasticity": -1.780043207873375,
+      "rmse": 7.70238816054558,
+      "r2": 0.95029474013032,
+      "improvement_vs_baseline_pct": 77.73304201520284,
+      "price_elasticity": -1.978727089203742,
       "pct_rows_negative_elasticity": 1.0,
-      "elasticity_error_vs_truth": 0.009350283481093014
+      "elasticity_error_vs_truth": 0.014728636641590853
     },
     "random_forest": {
-      "rmse": 14.006734196707018,
-      "r2": 0.8469351713436456,
-      "improvement_vs_baseline_pct": 60.979304319436444,
-      "price_elasticity": -0.8896130376370353,
-      "pct_rows_negative_elasticity": 0.9181506849315069,
-      "elasticity_error_vs_truth": 0.8997804537174328
+      "rmse": 13.644956848226673,
+      "r2": 0.8440103154639659,
+      "improvement_vs_baseline_pct": 60.55357448743373,
+      "price_elasticity": -0.8221164398581828,
+      "pct_rows_negative_elasticity": 0.9687975646879756,
+      "elasticity_error_vs_truth": 1.1418820127039684
     },
-    "gradient_boosting": {
-      "rmse": 11.516227794815993,
-      "r2": 0.8965281702962545,
-      "improvement_vs_baseline_pct": 67.91748784129783,
-      "price_elasticity": -1.2650091370564889,
-      "pct_rows_negative_elasticity": 0.9972602739726028,
-      "elasticity_error_vs_truth": 0.5243843542979791
+    "hist_gradient_boosting": {
+      "rmse": 10.576066674100877,
+      "r2": 0.9062869858148742,
+      "improvement_vs_baseline_pct": 69.42547851808902,
+      "price_elasticity": -1.6772700734445753,
+      "pct_rows_negative_elasticity": 0.9998097412480974,
+      "elasticity_error_vs_truth": 0.28672837911757587
     }
   },
   "selected": "linear_regression",
-  "baseline_rmse": 35.89565473504322,
-  "true_elasticity": -1.789393491354468,
-  "elasticity_row_correlation": 0.7600969954243082,
-  "elasticity_row_mae": 0.13739602720030072,
+  "baseline_rmse": 34.591111034585026,
+  "true_elasticity": -1.9639984525621512,
+  "elasticity_row_correlation": 0.622152783222951,
+  "elasticity_row_mae": 0.10248449842722862,
   "elasticity_by_segment": {
     "Rush hour (07-09, 17-19)": {
-      "estimated": -1.548873027926387,
-      "true": -1.5418186594559988
+      "estimated": -1.8640470332896775,
+      "true": -1.8158
     },
     "Off-peak (22-05)": {
-      "estimated": -1.9745242001515433,
-      "true": -2.072209889483194
+      "estimated": -2.0860643230348757,
+      "true": -2.0859
     },
     "Raining": {
-      "estimated": -1.614553481510846,
-      "true": -1.594371327737053
+      "estimated": -1.9116844293814106,
+      "true": -1.8553
     },
     "Dry": {
-      "estimated": -1.8571138903963305,
-      "true": -1.9614726970402363
+      "estimated": -1.9856711743938673,
+      "true": -1.9955
+    },
+    "Snowing": {
+      "estimated": -2.0692167200454348,
+      "true": -1.8459
     },
     "Weekend": {
-      "estimated": -1.7583641667868966,
-      "true": -1.7999717489578455
+      "estimated": -1.9661256980611532,
+      "true": -1.9953
     },
     "Weekday": {
-      "estimated": -1.7898968158715896,
-      "true": -1.803113690907157
+      "estimated": -1.9842779869673617,
+      "true": -1.9953
     }
   },
   "feature_importance": [
     {
-      "feature": "unit_cost",
-      "importance": 1.2382702569280521,
-      "std": 0.020397082049694447
-    },
-    {
-      "feature": "competitor_price_ratio",
-      "importance": 0.39135531865930195,
-      "std": 0.006572074987177365
-    },
-    {
-      "feature": "rush_x_price_ratio",
-      "importance": 0.1622772210127022,
-      "std": 0.003829651035992147
-    },
-    {
-      "feature": "margin_pct",
-      "importance": 0.1453359493199879,
-      "std": 0.002592547211828053
-    },
-    {
       "feature": "log_price",
-      "importance": 0.13867210382966388,
-      "std": 0.0016280570162687036
-    },
-    {
-      "feature": "is_raining",
-      "importance": 0.10575499725903079,
-      "std": 0.002378481793170971
-    },
-    {
-      "feature": "is_holiday",
-      "importance": 0.08636042686455463,
-      "std": 0.0020716380780249695
-    },
-    {
-      "feature": "rush_intensity",
-      "importance": 0.06977810743951395,
-      "std": 0.00204797136789177
+      "importance": 1.5182587598908814,
+      "std": 0.014994159716402658
     },
     {
       "feature": "product_id",
-      "importance": 0.060665447145199045,
-      "std": 0.000979766869770326
+      "importance": 0.27842167123560135,
+      "std": 0.0024861592595542058
     },
     {
-      "feature": "our_price",
-      "importance": 0.05239743618388776,
-      "std": 0.0016747048204615608
+      "feature": "rush_intensity",
+      "importance": 0.26555114687831766,
+      "std": 0.0020989505658863257
     },
     {
-      "feature": "competitor_mean_price",
-      "importance": 0.049663871014453256,
-      "std": 0.0010715770993964587
+      "feature": "competitor_price_ratio",
+      "importance": 0.11489533119338699,
+      "std": 0.0012215498962058547
     },
     {
-      "feature": "competitor_min_price",
-      "importance": 0.04833205118880014,
-      "std": 0.0015257803680688402
+      "feature": "road_closed",
+      "importance": 0.08176589978878221,
+      "std": 0.0009999227780505382
     },
     {
       "feature": "weather_demand_index",
-      "importance": 0.04638299041255772,
-      "std": 0.0015045789211361096
+      "importance": 0.05922137787950297,
+      "std": 0.0007663727346158012
     },
     {
-      "feature": "rain_x_price_ratio",
-      "importance": 0.042197079554179596,
-      "std": 0.0019569022127452988
+      "feature": "margin_pct",
+      "importance": 0.054329355920640476,
+      "std": 0.0006553003079745047
     },
     {
-      "feature": "rush_x_logprice",
-      "importance": 0.03884876373752353,
-      "std": 0.001196077854037747
+      "feature": "temp_comfort",
+      "importance": 0.049918683656449046,
+      "std": 0.0006722175307777973
+    },
+    {
+      "feature": "rush_x_price_ratio",
+      "importance": 0.04064970983439993,
+      "std": 0.0006382580906466038
+    },
+    {
+      "feature": "is_weekend",
+      "importance": 0.038664603251437876,
+      "std": 0.0006951992245484589
+    },
+    {
+      "feature": "competitor_min_price",
+      "importance": 0.038013314885701165,
+      "std": 0.0005414842644168942
+    },
+    {
+      "feature": "unit_cost",
+      "importance": 0.03403112292728139,
+      "std": 0.0004113670798509295
+    },
+    {
+      "feature": "our_price",
+      "importance": 0.027317259918387536,
+      "std": 0.0005274884132407402
+    },
+    {
+      "feature": "is_holiday",
+      "importance": 0.019306928698173444,
+      "std": 0.00028902354651948897
+    },
+    {
+      "feature": "tourist_index",
+      "importance": 0.009472200044553892,
+      "std": 0.0001579443860763288
     }
   ],
-  "test_rows": 2920,
-  "train_rows": 11680
+  "test_rows": 15768,
+  "train_rows": 63072
 }

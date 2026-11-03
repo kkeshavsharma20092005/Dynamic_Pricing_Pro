@@ -13,9 +13,9 @@ from engine import PricingEngine
 from schemas import PredictRequest
 
 req = PredictRequest(
-    product_id="SKU-MINI-CAB", hour=18, day_of_week=2, month=4,
+    product_id="JMU-CAB", hour=18, day_of_week=2, month=4,
     temperature=28.0, precipitation=0.0, weather_condition="Clear",
-    competitor_1_price=180.0, competitor_2_price=188.0, competitor_3_price=176.0,
+    competitor_1_price=220.0, competitor_2_price=231.0, competitor_3_price=213.0,
 )
 
 t0 = time.perf_counter()
@@ -34,7 +34,7 @@ def bench(label, fn, n=30):
 
 
 ctx = eng.build_context(req)
-grid = np.linspace(20, 32, 121)
+grid = np.linspace(160, 290, 121)
 
 print("PER-REQUEST BREAKDOWN")
 print("-" * 52)

@@ -2,7 +2,7 @@
 STEP 3 - Multi-model pipeline + GridSearchCV.
 
 Three families compete: LinearRegression (as Ridge, its regularised form),
-RandomForest, and GradientBoosting. Every one is wrapped in a Pipeline so that
+RandomForest, and HistGradientBoosting. Every one is wrapped in a Pipeline so that
 scaling and one-hot encoding are fitted INSIDE each CV fold - fit the scaler on the
 full dataset first and you have leaked test-set statistics into training, and every
 score you report afterwards is inflated.
@@ -20,9 +20,7 @@ import time
 import joblib
 import numpy as np
 from sklearn.compose import ColumnTransformer
-from sklearn.ensemble import (ExtraTreesRegressor, GradientBoostingRegressor,
-                              HistGradientBoostingRegressor,
-                              RandomForestRegressor)
+from sklearn.ensemble import HistGradientBoostingRegressor, RandomForestRegressor
 from sklearn.linear_model import Ridge
 from sklearn.metrics import make_scorer, r2_score, root_mean_squared_error
 from sklearn.model_selection import GridSearchCV
@@ -63,20 +61,14 @@ CANDIDATES = {
         Ridge(random_state=SEED),
         {"model__alpha": [0.01, 0.1, 1.0, 10.0, 100.0]},
     ),
+    # A year of hourly rows is 5x the old dataset, so the forest fits each tree on a
+    # sample, and histogram boosting replaces the much slower exact boosting.
     "random_forest": (
-        RandomForestRegressor(n_estimators=250, random_state=SEED, n_jobs=1),
+        RandomForestRegressor(n_estimators=80, max_samples=0.3, max_features=0.5,
+                              random_state=SEED, n_jobs=1),
         {
-            "model__max_depth": [10, 20, None],
-            "model__min_samples_leaf": [1, 5, 20],
-            "model__max_features": ["sqrt", 0.5],
-        },
-    ),
-    "extra_trees": (
-        ExtraTreesRegressor(n_estimators=350, random_state=SEED, n_jobs=1),
-        {
-            "model__max_depth": [10, 20, None],
-            "model__min_samples_leaf": [1, 5, 20],
-            "model__max_features": ["sqrt", 0.5],
+            "model__max_depth": [12, 20],
+            "model__min_samples_leaf": [5, 20],
         },
     ),
     "hist_gradient_boosting": (
@@ -85,15 +77,6 @@ CANDIDATES = {
             "model__max_depth": [4, 6],
             "model__learning_rate": [0.05, 0.08],
             "model__max_iter": [200, 300],
-        },
-    ),
-    "gradient_boosting": (
-        GradientBoostingRegressor(random_state=SEED),
-        {
-            "model__n_estimators": [200, 400],
-            "model__learning_rate": [0.05, 0.1],
-            "model__max_depth": [3, 5],
-            "model__subsample": [0.8, 1.0],
         },
     ),
 }

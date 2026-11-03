@@ -16,6 +16,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
+import appdb
+import rides
 from config import METRICS_JSON, MODEL_PKL, PRODUCTS
 from engine import PricingEngine
 from schemas import ModelMetrics, PredictRequest, PredictResponse
@@ -39,6 +41,13 @@ async def lifespan(app: FastAPI):
     state["metrics"] = json.loads(METRICS_JSON.read_text())
     print(f"[startup] model '{state['engine'].model_name}' loaded, "
           f"{len(state['engine'].products)} products")
+
+    rides.hub.engine = state["engine"]
+    appdb.init_db()
+    rides.cancel_interrupted_rides()
+    created = appdb.ensure_admin()
+    if created:
+        print(f"[startup] admin account created: {created}  (shown only once)")
     yield
     state.clear()
 
@@ -58,6 +67,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.include_router(rides.router)
 
 
 @app.post("/predict/", response_model=PredictResponse, tags=["pricing"])
@@ -121,5 +132,27 @@ if FRONTEND.exists():
     app.mount("/static", StaticFiles(directory=FRONTEND), name="static")
 
     @app.get("/", include_in_schema=False)
+    def home():
+        return FileResponse(FRONTEND / "home.html")
+
+    @app.get("/ride", include_in_schema=False)
+    def rider_app():
+        return FileResponse(FRONTEND / "rider.html")
+
+    @app.get("/driver", include_in_schema=False)
+    def driver_app():
+        return FileResponse(FRONTEND / "driver.html")
+
+    @app.get("/admin", include_in_schema=False)
+    def admin_app():
+        return FileResponse(FRONTEND / "admin.html")
+
+    @app.get("/dashboard", include_in_schema=False)
     def dashboard():
         return FileResponse(FRONTEND / "index.html")
+
+    # A service worker can only control pages at or below its own path, so it must be
+    # served from the root rather than from /static.
+    @app.get("/sw.js", include_in_schema=False)
+    def service_worker():
+        return FileResponse(FRONTEND / "sw.js", media_type="text/javascript")

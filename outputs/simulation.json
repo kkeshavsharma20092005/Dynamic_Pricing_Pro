@@ -1,0 +1,100 @@
+{
+  "seeds": 10,
+  "market_hours": 15768,
+  "period": [
+    "2024-10-19 00:00:00",
+    "2024-12-30 23:00:00"
+  ],
+  "caps": {
+    "normal": 1.3,
+    "hardship": 1.15
+  },
+  "assumptions": "Synthetic market. Supply response, waits and cancellations are assumed values, so results compare strategies within this model only.",
+  "strategies": {
+    "fixed": {
+      "profit": 41359962.14189232,
+      "rides": 768731.3776735822,
+      "wait_min": 9.476414164285593,
+      "avg_multiplier": 1.0,
+      "pct_hours_at_cap": 0.0,
+      "profit_std": 31734.218293128255,
+      "profit_vs_fixed_pct": 0.0,
+      "profit_vs_fixed_pct_std": 0.0,
+      "regret_vs_oracle_pct": 13.898008094831663,
+      "profit_by_segment": {
+        "Rush hour": 21094894.63766653,
+        "Snow or storm": 895819.5874739347,
+        "Road closed": 1670593.8030192726,
+        "Off-peak": 10353343.322267722
+      }
+    },
+    "rule": {
+      "profit": 45718197.83008419,
+      "rides": 746905.1866691723,
+      "wait_min": 6.526980755012495,
+      "avg_multiplier": 1.0744572945700832,
+      "pct_hours_at_cap": 7.301496702181635,
+      "profit_std": 45928.31551898558,
+      "profit_vs_fixed_pct": 10.537379284857376,
+      "profit_vs_fixed_pct_std": 0.1313288160202271,
+      "regret_vs_oracle_pct": 4.825146851420945,
+      "profit_by_segment": {
+        "Rush hour": 25311389.697160915,
+        "Snow or storm": 989043.5199198093,
+        "Road closed": 1876448.977804038,
+        "Off-peak": 10357003.397562617
+      }
+    },
+    "ml": {
+      "profit": 45038499.06491152,
+      "rides": 787113.9089709338,
+      "wait_min": 7.720196279673866,
+      "avg_multiplier": 1.0215546430072941,
+      "pct_hours_at_cap": 2.2577371892440388,
+      "profit_std": 34778.14955941327,
+      "profit_vs_fixed_pct": 8.894006459139941,
+      "profit_vs_fixed_pct_std": 0.11069018961863987,
+      "regret_vs_oracle_pct": 6.240138407427574,
+      "profit_by_segment": {
+        "Rush hour": 24707734.809798516,
+        "Snow or storm": 999504.3716342661,
+        "Road closed": 1850032.4203998793,
+        "Off-peak": 10337079.62041044
+      }
+    },
+    "bandit": {
+      "profit": 43862130.315696165,
+      "rides": 701273.7046701276,
+      "wait_min": 8.43473139947228,
+      "avg_multiplier": 1.0860026934332445,
+      "pct_hours_at_cap": 15.327879249112126,
+      "profit_std": 71360.40408540257,
+      "profit_vs_fixed_pct": 6.049794563686007,
+      "profit_vs_fixed_pct_std": 0.19278412882222357,
+      "regret_vs_oracle_pct": 8.689057736100457,
+      "profit_by_segment": {
+        "Rush hour": 24734492.74712365,
+        "Snow or storm": 816626.3598957753,
+        "Road closed": 1583177.1774873345,
+        "Off-peak": 9786723.704598818
+      }
+    },
+    "oracle": {
+      "profit": 48036053.24880026,
+      "rides": 719187.7900895444,
+      "wait_min": 4.995569675186191,
+      "avg_multiplier": 1.125156064977132,
+      "pct_hours_at_cap": 20.788939624556065,
+      "profit_std": 50710.96159050644,
+      "profit_vs_fixed_pct": 16.14148179597508,
+      "profit_vs_fixed_pct_std": 0.13911658323057302,
+      "regret_vs_oracle_pct": 0.0,
+      "profit_by_segment": {
+        "Rush hour": 27396771.947251916,
+        "Snow or storm": 1037497.6008938547,
+        "Road closed": 1949711.3837127513,
+        "Off-peak": 10423038.202597138
+      }
+    }
+  }
+}

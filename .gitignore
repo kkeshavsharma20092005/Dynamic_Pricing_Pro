@@ -27,6 +27,10 @@ outputs/*
 !outputs/ground_truth.json
 !outputs/feature_importance.csv
 !outputs/model_comparison.json
+!outputs/simulation.json
+
+# --- App data: real phone numbers and password hashes, never commit these ---
+data/app.db*
 *.log
 *.err
 
