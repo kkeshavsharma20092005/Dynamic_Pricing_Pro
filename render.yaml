@@ -24,3 +24,8 @@ services:
       # Set this in the Render dashboard. Never commit it.
       - key: ADMIN_PASSWORD
         sync: false
+      # REQUIRED on the free plan: its disk is wiped whenever the service sleeps, so
+      # accounts must live in a hosted PostgreSQL database (e.g. a free Neon project).
+      # Without it the app falls back to SQLite and loses every account on restart.
+      - key: DATABASE_URL
+        sync: false

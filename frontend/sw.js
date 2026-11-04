@@ -1,6 +1,6 @@
 // Keeps the app shell available on weak mountain networks. API calls are never cached:
 // a stale fare or ride status would be worse than a clear "you are offline" message.
-const CACHE = "raahi-v9";
+const CACHE = "raahi-v12";
 const SHELL = [
   "/", "/ride", "/driver",
   "/static/app.css", "/static/common.js", "/static/home.js", "/static/chat.js", "/static/rider.js", "/static/driver.js",

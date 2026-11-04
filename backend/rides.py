@@ -12,7 +12,6 @@ import os
 import random
 import re
 import secrets
-import sqlite3
 import time
 from datetime import datetime, timedelta, timezone
 
@@ -21,6 +20,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Query, WebSocket,
 from pydantic import BaseModel, Field
 
 import appdb
+import business
 import chatbot
 import geocode
 import localities
@@ -133,7 +133,7 @@ def register(body: RegisterBody):
     try:
         user_id = appdb.create_user(body.phone, body.name.strip(), body.role, body.password,
                                     body.vehicle if body.role == "driver" else None)
-    except sqlite3.IntegrityError:
+    except appdb.IntegrityError:
         raise HTTPException(409, f"This number already has a {body.role} account.")
     user = appdb.get_user(user_id)
     return {"token": make_token(user), "user": public_user(user)}
@@ -209,7 +209,7 @@ def build_quote(body: QuoteBody) -> dict:
                for v in vehicles]
     return {
         "pickup": label_point(body.pickup), "dropoff": label_point(body.dropoff),
-        "km": route["km"], "minutes": route["minutes"], "path": route["path"],
+        "km": route["km"], "minutes": route["minutes"], "path": route["path"], "routed": route["routed"],
         "region": region, "region_name": REGIONS[region]["name"],
         "weather": conditions["weather_condition"], "road_closed": conditions["road_closed"],
         "options": options,
@@ -265,6 +265,9 @@ def get_ride(ride_id: int) -> dict | None:
 def ride_view(ride: dict, viewer: dict) -> dict:
     """What this viewer may see. Phone numbers are shared only while a ride is live."""
     view = {k: ride[k] for k in ride if k not in ("rider_id", "driver_id")}
+    if viewer["role"] != "admin":
+        # The commission and cost split is business data, for the admin only.
+        view["quote"] = {k: v for k, v in ride["quote"].items() if k != "business"}
     live = ride["status"] in ("accepted", "arrived", "in_progress")
     if ride["sim_driver"]:
         view["driver"] = {"name": ride["sim_driver"]["name"], "simulated": True, "phone": None}
@@ -326,6 +329,8 @@ async def book(body: BookBody, user: dict = Depends(current_user)):
 
 async def create_ride(user: dict, quoted: dict, option: dict) -> dict:
     now = time.time()
+    # Saved with the ride, so later edits to the assumptions never rewrite its economics.
+    option = {**option, "business": business_assumptions()}
     with appdb.connect() as conn:
         ride_id = conn.execute(
             "INSERT INTO rides (rider_id, status, pickup, dropoff, vehicle, region, km, minutes, "
@@ -1038,6 +1043,67 @@ def set_rival_rate(rival: str, vehicle: str, body: RateCard, admin: dict = Depen
     rates[rival]["cards"][vehicle] = body.model_dump()
     appdb.set_setting("rival_rates", rates)
     return rates[rival]
+
+
+def business_assumptions() -> dict:
+    return business.merge(appdb.get_setting("business_model"))
+
+
+def economics_of(ride: dict) -> dict:
+    quote = ride["quote"]
+    return business.ride_economics(ride["fare"], ride["km"], ride["vehicle"], quote.get("normal_fare"),
+                                   quote.get("business") or business_assumptions())
+
+
+@router.get("/admin/business")
+def admin_business(admin: dict = Depends(require_admin)):
+    """Per-ride business model: revenue, costs and profit of every ride, plus totals."""
+    with appdb.connect() as conn:
+        rows = [row_to_ride(r) for r in conn.execute(
+            "SELECT * FROM rides ORDER BY id DESC LIMIT 5000").fetchall()]
+    completed = [r for r in rows if r["status"] == "completed"]
+    done_econ = [economics_of(r) for r in completed]
+
+    by_vehicle = {}
+    for ride, econ in zip(completed, done_econ):
+        by_vehicle.setdefault(ride["vehicle"], []).append(econ)
+
+    recent = []
+    for ride in rows[:50]:
+        view = ride_view(ride, admin)
+        recent.append({
+            "id": ride["id"], "created_at": ride["created_at"], "status": ride["status"],
+            "trip": f"{ride['pickup']['name']} → {ride['dropoff']['name']}",
+            "vehicle": ride["vehicle"], "label": ride["quote"]["label"], "km": ride["km"],
+            "multiplier": ride["quote"]["multiplier"],
+            "driver": view["driver"]["name"] if view["driver"] else None,
+            "simulated": bool(ride["sim_driver"]),
+            # Cancelled or unfinished rides earn nothing yet; show what they would have.
+            "counted": ride["status"] == "completed",
+            "economics": economics_of(ride),
+        })
+
+    assumptions = business_assumptions()
+    sample = {v: business.ride_economics(VEHICLES[v]["base"] + VEHICLES[v]["per_km"] * 10, 10, v,
+                                         VEHICLES[v]["base"] + VEHICLES[v]["per_km"] * 10, assumptions)
+              for v in VEHICLES}
+    return {
+        "assumptions": assumptions,
+        "totals": business.summarise(done_econ),
+        "by_vehicle": {v: {"label": VEHICLES[v]["label"], **business.summarise(e)} for v, e in by_vehicle.items()},
+        "sample_10km": sample,
+        "rides": recent,
+    }
+
+
+@router.put("/admin/business")
+def set_business(body: dict, admin: dict = Depends(require_admin)):
+    try:
+        clean = business.validate(body)
+    except ValueError as error:
+        raise HTTPException(422, str(error))
+    appdb.set_setting("business_model", clean)
+    return clean
 
 
 @router.get("/admin/simulation")

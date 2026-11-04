@@ -219,8 +219,8 @@ function setupChat() {
         // The panel shows the same trip as the conversation, whichever one changed it.
         pickup = reply.pickup || null;
         dropoff = reply.dropoff || null;
-        marker("pickup", pickup, "#34d399");
-        marker("dropoff", dropoff, "#fb923c");
+        marker("pickup", pickup);
+        marker("dropoff", dropoff);
         if (!(pickup && dropoff)) {
           drawRoute(null);
           const only = pickup || dropoff;

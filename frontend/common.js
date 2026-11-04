@@ -42,6 +42,9 @@ const STRINGS = {
     "Popular destinations": "लोकप्रिय जगहें", "Price comparison": "किराये की तुलना",
     "Confirmed fare": "पक्का किराया", "Estimate": "अनुमान", "Our pick": "हमारा सुझाव",
     "Check real fare": "असली किराया देखें",
+    "Connecting to Raahi…": "राही से जुड़ रहे हैं…",
+    "The server is waking up. You stay signed in.": "सर्वर चालू हो रहा है। आप साइन इन रहेंगे।",
+    "Your ride is in progress": "आपकी राइड जारी है",
     "Estimates use assumed rates, not live Rapido or Uber prices, and exclude their surge.":
       "अनुमान मानी गई दरों पर हैं, Rapido या Uber के लाइव किराये नहीं, और इनमें उनका सर्ज शामिल नहीं।",
   },
@@ -76,6 +79,38 @@ function fill(node, ...children) {
 }
 
 const token = () => localStorage.getItem(TOKEN_KEY);
+
+// Who is signed in on this device, for this app. Only a 401 means "signed out": a server
+// that is still waking up (Render's free plan takes up to a minute) or a dropped mobile
+// connection must not throw the user back to the login page with a valid session.
+async function signedInUser(role) {
+  if (!token()) return null;
+  const note = $("auth-form");
+  for (let attempt = 0; attempt < 40; attempt++) {
+    try {
+      const response = await fetch("/api/me", { headers: { Authorization: "Bearer " + token() } });
+      if (response.status === 401) { localStorage.removeItem(TOKEN_KEY); return null; }
+      if (response.ok) {
+        const me = await response.json();
+        return me.role === role ? me : null;
+      }
+    } catch { /* offline or server starting: wait and try again */ }
+    if (note) fill(note, el("div", { class: "center stack" }, el("div", { class: "status pulse" }, t("Connecting to Raahi…")),
+      el("div", { class: "muted" }, t("The server is waking up. You stay signed in."))));
+    await new Promise(resolve => setTimeout(resolve, 3000));
+  }
+  return null;
+}
+
+// In-app screens get their own browser history entries, so the phone's Back button steps
+// back inside the app (fares -> booking) instead of leaving it.
+let backHandler = null;
+function goScreen(name, { replace = false } = {}) {
+  if (!replace && history.state && history.state.screen === name) return;
+  history[replace ? "replaceState" : "pushState"]({ screen: name }, "");
+}
+const onBack = handler => { backHandler = handler; };
+addEventListener("popstate", event => { if (backHandler) backHandler((event.state && event.state.screen) || null); });
 
 async function loadPhotos() {
   PHOTOS = await fetch("/static/photos/photos.json").then(r => r.json()).catch(() => []);
@@ -219,10 +254,17 @@ function connectLive(onEvent) {
   open();
 }
 
+// A routed path follows the road and has many points; an estimate is a few straight legs.
+const routeStyle = path => path && path.length > 4
+  ? { color: "#111111", weight: 5, opacity: .9, lineCap: "round", lineJoin: "round" }
+  : { color: "#111111", weight: 4, dashArray: "2 8", lineCap: "round" };
+
 function makeMap(center = [33.6, 74.9], zoom = 8) {
   const map = L.map("map").setView(center, zoom);
+  // OpenStreetMap's free standard tiles, toned down in app.css so roads and the route line
+  // stand out the way they do in a ride app.
   L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
-    maxZoom: 18, attribution: "&copy; OpenStreetMap contributors",
+    maxZoom: 19, attribution: "&copy; OpenStreetMap contributors",
   }).addTo(map);
   return map;
 }

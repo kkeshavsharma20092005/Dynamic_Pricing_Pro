@@ -3,37 +3,50 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta name="theme-color" content="#000000" />
+  <meta name="theme-color" content="#ffffff" />
   <title>Raahi - Rides across Jammu & Kashmir</title>
   <link rel="manifest" href="/static/manifest.webmanifest" />
   <link rel="icon" href="/static/icons/icon-192.png" />
   <link rel="stylesheet" href="/static/app.css" />
 </head>
 <body class="home">
-  <section id="hero" class="hero" aria-roledescription="carousel" aria-label="Famous places in Jammu & Kashmir">
-    <div id="slides"></div>
+  <header class="home-nav">
+    <a class="logo" href="/">Raahi</a>
+    <a class="nav-link" href="/ride">Ride</a>
+    <a class="nav-link" href="/driver">Drive</a>
+    <a class="nav-link" href="/admin">Admin</a>
+    <a class="nav-link nav-cta" href="/ride">Log in</a>
+  </header>
+
+  <div class="hero-wrap">
     <div class="hero-text">
-      <div class="brand">Raahi</div>
-      <h1>From Jammu's temples to Kashmir's meadows</h1>
-      <p>Book a ride anywhere in Jammu & Kashmir, with a fare that explains itself and a limit that protects you in the snow.</p>
-      <a class="cta" href="/ride">Book a ride</a>
+      <h1>Go anywhere in Jammu &amp; Kashmir</h1>
+      <p>Book a bike, auto or cab in seconds. See the fare before you ride, and why it is what it is. A fair-price limit keeps it reasonable in the snow.</p>
+      <div class="hero-actions">
+        <a class="cta" href="/ride">Book a ride</a>
+        <a class="cta light" href="/driver">Drive with Raahi</a>
+      </div>
+      <div class="hero-points"><span>Upfront fares</span><span>Live tracking</span><span>English, हिंदी, اردو</span></div>
     </div>
-    <button id="prev" class="hero-nav left" type="button" aria-label="Previous photo">‹</button>
-    <button id="next" class="hero-nav right" type="button" aria-label="Next photo">›</button>
-    <div class="hero-foot">
-      <div id="caption" class="hero-caption" aria-live="polite"></div>
-      <div id="dots" class="dots"></div>
-    </div>
-  </section>
+    <section id="hero" class="hero" aria-roledescription="carousel" aria-label="Famous places in Jammu & Kashmir">
+      <div id="slides"></div>
+      <button id="prev" class="hero-nav left" type="button" aria-label="Previous photo">‹</button>
+      <button id="next" class="hero-nav right" type="button" aria-label="Next photo">›</button>
+      <div class="hero-foot">
+        <div id="caption" class="hero-caption" aria-live="polite"></div>
+        <div id="dots" class="dots"></div>
+      </div>
+    </section>
+  </div>
 
   <main class="home-main">
-    <section>
-      <h2>Choose your account</h2>
+    <section class="section">
+      <h2>One app, three ways in</h2>
       <p class="muted">Each has its own login, so one person can use a rider and a driver account side by side.</p>
       <div class="roles">
-        <a class="role" href="/ride"><span class="role-icon">🧳</span><strong>Customer</strong><span class="muted">Book rides, track them live, and compare fares.</span></a>
-        <a class="role" href="/driver"><span class="role-icon">🚕</span><strong>Driver</strong><span class="muted">Go online, accept requests, and see your trips.</span></a>
-        <a class="role" href="/admin"><span class="role-icon">🛠️</span><strong>Admin</strong><span class="muted">Set conditions and fair-price limits, and compare strategies.</span></a>
+        <a class="role" href="/ride"><span class="role-icon">🧳</span><strong>Ride</strong><span class="muted">Book rides, track them live and compare fares.</span><span class="role-go">Book a ride →</span></a>
+        <a class="role" href="/driver"><span class="role-icon">🚕</span><strong>Drive</strong><span class="muted">Go online, accept requests and see your earnings.</span><span class="role-go">Start driving →</span></a>
+        <a class="role" href="/admin"><span class="role-icon">📊</span><strong>Operate</strong><span class="muted">Set conditions and fair-price limits, and track profit per ride.</span><span class="role-go">Open admin →</span></a>
       </div>
     </section>
 
@@ -51,6 +64,7 @@
       </details>
     </section>
   </main>
+  <footer class="home-foot"><strong>Raahi</strong><div>A college demo of a ride app for Jammu &amp; Kashmir. Drivers may be simulated and payment is demo-only.</div></footer>
   <script src="/static/common.js"></script>
   <script src="/static/home.js"></script>
 </body>

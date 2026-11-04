@@ -4,7 +4,7 @@ const panel = () => $("panel");
 
 function showPosition() {
   if (!position) return;
-  if (!self_marker) self_marker = L.circleMarker([position.lat, position.lon], { radius: 8, color: "#fff", weight: 2, fillColor: "#34d399", fillOpacity: 1 }).addTo(map);
+  if (!self_marker) self_marker = L.circleMarker([position.lat, position.lon], { radius: 8, color: "#fff", weight: 3, fillColor: "#1a73e8", fillOpacity: 1 }).addTo(map);
   else self_marker.setLatLng([position.lat, position.lon]);
 }
 
@@ -95,7 +95,8 @@ const NEXT_STEP = {
 
 function renderRide() {
   if (routeLine) routeLine.remove();
-  routeLine = L.polyline(ride.path, { color: "#2dd4bf", weight: 4, dashArray: "6 6" }).addTo(map);
+  routeLine = L.polyline(ride.path, routeStyle(ride.path)).addTo(map);
+  goScreen("ride");
   map.fitBounds(routeLine.getBounds(), { padding: [30, 30] });
 
   const finished = ride.status === "completed" || ride.status === "cancelled";
@@ -115,13 +116,26 @@ function renderRide() {
     ["accepted", "arrived"].includes(ride.status) && el("button", { type: "button", class: "danger", onclick: () =>
       api(`/rides/${ride.id}/cancel`, { method: "POST" }).then(r => { ride = r; render(); }).catch(e => toast(e.message)) }, t("Cancel ride")),
     !finished && chatArea,
-    finished && el("button", { type: "button", onclick: () => {
-      ride = addMessage = null;
-      if (routeLine) { routeLine.remove(); routeLine = null; }
-      render();
-    } }, "Back to waiting"),
+    finished && el("button", { type: "button", onclick: backToWaiting }, "Back to waiting"),
   );
   if (!finished && !existing) addMessage = renderChat(chatArea, ride, "driver");
+}
+
+function backToWaiting() {
+  goScreen("waiting", { replace: true });
+  ride = addMessage = null;
+  if (routeLine) { routeLine.remove(); routeLine = null; }
+  render();
+}
+
+// Back during a live trip keeps the trip on screen; after it ends, returns to waiting.
+function goBack() {
+  if (ride && !["completed", "cancelled"].includes(ride.status)) {
+    goScreen("ride");
+    toast("Trip in progress. Finish or cancel it first.");
+  } else if (ride) {
+    backToWaiting();
+  }
 }
 
 function onLive(event) {
@@ -144,6 +158,8 @@ function onLive(event) {
 
 async function start() {
   hideAuth();
+  goScreen("waiting", { replace: true });
+  onBack(goBack);
   $("app").classList.remove("hidden");
   showLogout();
   map = map || makeMap();
@@ -164,10 +180,8 @@ const vehicleField = () => [{
   useAccount("driver");
   setupShell("Raahi Driver");
   await loadPhotos();
-  if (token()) {
-    const me = await api("/me").catch(() => null);
-    if (me && me.role === "driver") return start();
-  }
+  if (await signedInUser("driver")) return start();
+  fill($("auth-form"));
   showAuthPhoto("patnitop");
   renderAuth($("auth-form"), "driver", start, vehicleField);
 })();

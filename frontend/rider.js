@@ -5,16 +5,19 @@ const panel = () => $("panel");
 const VEHICLE_ICON = { bike: "🛵", erickshaw: "🛺", auto: "🛺", cab: "🚕", shared: "🚐" };
 const STEPS = ["searching", "accepted", "arrived", "in_progress", "completed"];
 
-function marker(key, point, color) {
+// Pickup: a black dot with a white ring. Drop-off: a black square.
+const DROP_ICON = L.divIcon({ className: "pin-drop", iconSize: [16, 16] });
+function marker(key, point) {
   if (layers[key]) layers[key].remove();
-  layers[key] = point
-    ? L.circleMarker([point.lat, point.lon], { radius: 9, color: "#fff", weight: 2, fillColor: color, fillOpacity: 1 }).addTo(map)
-    : null;
+  if (!point) { layers[key] = null; return; }
+  layers[key] = key === "dropoff"
+    ? L.marker([point.lat, point.lon], { icon: DROP_ICON, keyboard: false }).addTo(map)
+    : L.circleMarker([point.lat, point.lon], { radius: 8, color: "#fff", weight: 3, fillColor: "#111", fillOpacity: 1 }).addTo(map);
 }
 
 function drawRoute(path) {
   if (layers.route) layers.route.remove();
-  layers.route = path ? L.polyline(path, { color: "#2dd4bf", weight: 4, dashArray: "6 6" }).addTo(map) : null;
+  layers.route = path ? L.polyline(path, routeStyle(path)).addTo(map) : null;
   if (layers.route) map.fitBounds(layers.route.getBounds(), { padding: [30, 30] });
 }
 
@@ -28,7 +31,7 @@ async function showNearby() {
   if (!pickup) return;
   const drivers = await api(`/nearby?lat=${pickup.lat}&lon=${pickup.lon}`).catch(() => []);
   layers.nearby = drivers.map(d => L.circleMarker([d.lat, d.lon],
-    { radius: 5, color: "#2dd4bf", fillColor: d.simulated ? "#64748b" : "#34d399", fillOpacity: 1, weight: 1 }).addTo(map));
+    { radius: 5, color: "#fff", fillColor: d.simulated ? "#8a8a8a" : "#12805c", fillOpacity: 1, weight: 2 }).addTo(map));
 }
 
 async function withAddress(point) {
@@ -76,8 +79,8 @@ function placeSelect(id, label, current, onPick) {
   return el("div", {}, el("label", { htmlFor: id }, t(label)), select);
 }
 
-const setPickup = p => { pickup = p; quote = null; marker("pickup", p, "#34d399"); showNearby(); renderBooking(); };
-const setDropoff = p => { dropoff = p; quote = null; marker("dropoff", p, "#fb923c"); renderBooking(); };
+const setPickup = p => { pickup = p; quote = null; marker("pickup", p); showNearby(); renderBooking(); };
+const setDropoff = p => { dropoff = p; quote = null; marker("dropoff", p); renderBooking(); };
 
 // Two cards can share a place, so only the first of them shows as chosen.
 const isChosen = photo => !!dropoff && PHOTOS.find(p => p.place === dropoff.name) === photo;
@@ -130,15 +133,15 @@ function renderBooking() {
             map.flyTo([pos.coords.latitude, pos.coords.longitude], 15);
           },
           e => toast(e.message));
-      } }, "📍 " + t("Use my location")),
+      } }, t("Use my location")),
       el("button", { type: "button", class: "secondary", disabled: !(pickup && dropoff), onclick: () => {
         [pickup, dropoff] = [dropoff, pickup];
-        marker("pickup", pickup, "#34d399");
-        marker("dropoff", dropoff, "#fb923c");
+        marker("pickup", pickup);
+        marker("dropoff", dropoff);
         quote = null;
         showNearby();
         renderBooking();
-      } }, "⇅ " + t("Swap"))),
+      } }, "⇅  " + t("Swap"))),
     placeSelect("dropoff-select", "Drop-off", dropoff, setDropoff),
     addressSearch("dropoff-address", setDropoff),
     !pickup && el("div", { class: "muted" }, t("Tap the map to set a pin")),
@@ -161,6 +164,7 @@ async function loadQuote(results, error) {
     chosen = quote.options.some(o => o.vehicle === chosen) ? chosen : quote.options[0].vehicle;
     drawRoute(quote.path);
     renderOptions(results, error, true);
+    goScreen("fares");
   } catch (e) {
     if (run !== quoteRun) return;
     drawRoute(null);
@@ -173,14 +177,14 @@ function comparisonCard(option) {
   const rec = option.recommendation;
   const row = (id, name, fareNode, tag, link) => el("div", { class: "compare-row" + (rec.pick === id ? " picked" : "") },
     el("div", {}, el("strong", {}, name), " ", el("span", { class: "tag" + (tag === t("Estimate") ? " warn" : "") }, tag),
-      rec.pick === id && rec.confident && el("span", { class: "tag good" }, "★ " + t("Our pick"))),
+      rec.pick === id && rec.confident && el("span", { class: "tag good" }, t("Our pick"))),
     el("div", { class: "compare-fare" }, fareNode,
       link && el("a", { href: link, target: "_blank", rel: "noopener noreferrer", class: "muted", onclick: e => e.stopPropagation() }, t("Check real fare") + " ↗")));
   return el("div", { class: "card stack compare" },
     el("h3", {}, t("Price comparison")),
     row("raahi", "Raahi", rupees(option.fare), t("Confirmed fare")),
     option.rivals.map(r => row(r.id, r.label, `~${rupees(r.low)}-${rupees(r.high).slice(1)}`, t("Estimate"), r.url)),
-    el("div", { class: "recommend" }, "💡 " + rec.message),
+    el("div", { class: "recommend" }, rec.message),
     option.rivals.length > 0 && el("div", { class: "muted" }, t("Estimates use assumed rates, not live Rapido or Uber prices, and exclude their surge.")));
 }
 
@@ -194,7 +198,8 @@ function renderOptions(results, error, animate = false) {
       type: "button", class: "option" + (selected ? " selected" : ""), "aria-pressed": String(selected),
       onclick: () => { chosen = o.vehicle; renderOptions(results, error); },
     },
-      el("div", { class: "option-head" }, el("span", {}, `${VEHICLE_ICON[o.vehicle]} ${o.label}`), fare),
+      el("div", { class: "option-head" },
+        el("span", { class: "option-name" }, el("span", { class: "veh-icon", "aria-hidden": "true" }, VEHICLE_ICON[o.vehicle]), o.label), fare),
       el("div", { class: "muted" }, `${quote.km} km · ~${formatMinutes(quote.minutes)} · ×${o.multiplier}`),
       selected && o.fair_capped && el("span", { class: "tag warn" }, `${t("Fair-price limit applied")} · ${rupees(o.saved_by_cap)} ${t("saved")}`),
       selected && o.reasons.length > 0 && el("div", { class: "reasons" },
@@ -203,7 +208,7 @@ function renderOptions(results, error, animate = false) {
           el("span", {}, (r.effect > 0 ? "+" : "−") + rupees(Math.abs(r.effect)))))));
   });
   fill(results,
-    el("div", { class: "muted" }, `${weatherIcon(quote.weather)} ${quote.region_name} · ${quote.weather}${quote.road_closed ? " · road closure" : ""}. Distance is estimated.`),
+    el("div", { class: "muted" }, `${weatherIcon(quote.weather)} ${quote.region_name} · ${quote.weather}${quote.road_closed ? " · road closure" : ""}. ${quote.routed ? "Road route and distance from OpenStreetMap." : "Distance is estimated."}`),
     buttons,
     comparisonCard(current),
     el("div", { class: "muted" }, t("Demo payment: pay the driver directly")),
@@ -242,10 +247,11 @@ function showRide(next) {
   const statusChanged = ride && ride.id === next.id && ride.status !== next.status;
   const sameChat = ride && ride.id === next.id && ride.driver && next.driver;
   ride = next;
+  goScreen("ride");
   clearNearby();
   drawRoute(ride.path);
-  marker("pickup", ride.pickup, "#34d399");
-  marker("dropoff", ride.dropoff, "#fb923c");
+  marker("pickup", ride.pickup);
+  marker("dropoff", ride.dropoff);
   if (statusChanged) toast(t(STATUS_TEXT[ride.status]));
 
   const finished = ride.status === "completed" || ride.status === "cancelled";
@@ -269,8 +275,8 @@ function showRide(next) {
       el("div", {}, el("strong", {}, driver.name), " ",
         driver.simulated && el("span", { class: "tag" }, t("Demo driver"))),
       !finished && (driver.phone
-        ? el("a", { href: `tel:+91${driver.phone}` }, el("button", { type: "button", class: "secondary" }, "📞 " + t("Call")))
-        : el("button", { type: "button", class: "secondary", onclick: () => toast(t("Calling is simulated for demo drivers.")) }, "📞 " + t("Call")))),
+        ? el("a", { href: `tel:+91${driver.phone}` }, el("button", { type: "button", class: "secondary" }, t("Call")))
+        : el("button", { type: "button", class: "secondary", onclick: () => toast(t("Calling is simulated for demo drivers.")) }, t("Call")))),
     driver && !finished && chatArea,
     ride.quote.reasons.length > 0 && el("div", {},
       el("h3", {}, t("Why this fare")),
@@ -286,6 +292,7 @@ function showRide(next) {
 }
 
 function resetBooking() {
+  goScreen("book", { replace: true });
   ride = quote = dropoff = pickup = addMessage = null;
   ["pickup", "dropoff", "driver"].forEach(k => marker(k, null));
   drawRoute(null);
@@ -318,8 +325,26 @@ function onLive(event) {
   }
 }
 
+// Back: from a live ride, stay (it is still happening); from a finished ride or the fares,
+// return to choosing a trip. From the booking screen itself, Back leaves the app as usual.
+function goBack(state) {
+  if (ride && !["completed", "cancelled"].includes(ride.status)) {
+    goScreen("ride");
+    toast(t("Your ride is in progress"));
+  } else if (ride) {
+    resetBooking();
+  } else if (state !== "fares" && dropoff) {
+    dropoff = quote = null;
+    marker("dropoff", null);
+    drawRoute(null);
+    renderBooking();
+  }
+}
+
 async function start() {
   hideAuth();
+  goScreen("book", { replace: true });
+  onBack(goBack);
   $("app").classList.remove("hidden");
   showLogout();
   map = map || makeMap();
@@ -337,10 +362,8 @@ async function start() {
   useAccount("rider");
   setupShell("Raahi");
   await loadPhotos();
-  if (token()) {
-    const me = await api("/me").catch(() => null);
-    if (me && me.role === "rider") return start();
-  }
+  if (await signedInUser("rider")) return start();
+  fill($("auth-form"));
   showAuthPhoto("bahu-fort");
   renderAuth($("auth-form"), "rider", start);
 })();

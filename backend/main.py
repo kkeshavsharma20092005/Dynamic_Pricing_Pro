@@ -1,5 +1,6 @@
 
 import json
+import os
 import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -44,12 +45,17 @@ async def lifespan(app: FastAPI):
 
     rides.hub.engine = state["engine"]
     appdb.init_db()
+    print(f"[startup] database: {appdb.backend_name()}")
+    if appdb.backend_name() == "sqlite" and os.environ.get("RENDER"):
+        print("[startup] WARNING: SQLite on Render's free disk is wiped on every restart. "
+              "Set DATABASE_URL to a PostgreSQL database to keep accounts.")
     rides.cancel_interrupted_rides()
     created = appdb.ensure_admin()
     if created:
         print(f"[startup] admin account created: {created}  (shown only once)")
     yield
     state.clear()
+    appdb.close()
 
 
 app = FastAPI(

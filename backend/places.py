@@ -1,14 +1,18 @@
 """
 Jammu & Kashmir geography for the ride app.
 
-Coordinates are approximate and road distance is estimated, not routed: straight-line
-distance times a terrain factor, passing through the real corridor towns between
-regions. That keeps the demo free of a paid routing service, at the cost of a route line
-that does not follow actual roads.
+Trips follow real roads through OSRM (see routing.py): road distance, drive time and the
+line drawn on the map. If routing is unavailable, the fallback is an estimate: straight-line
+distance times a terrain factor, passing through the real corridor towns between regions.
 """
 from math import asin, cos, radians, sin, sqrt
 
 from config import REGIONS
+from routing import road_route
+
+# OSRM drive times assume free-flowing traffic. J&K city traffic, ghat sections and
+# checkpoints are slower, so its times are stretched by this much.
+TRAFFIC_FACTOR = 1.2
 
 PLACES = [
     # Jammu plains
@@ -87,7 +91,7 @@ def corridor_between(region_a: str, region_b: str) -> list:
 
 
 def plan_route(a_lat, a_lon, b_lat, b_lon) -> dict:
-    """Estimated road distance, duration and a path through any corridor towns."""
+    """Road distance, duration and the path to draw: routed if possible, else estimated."""
     start, end = nearest_place(a_lat, a_lon)["region"], nearest_place(b_lat, b_lon)["region"]
     via = [] if start == end else corridor_between(start, end)
     path = [(a_lat, a_lon)] + [(p["lat"], p["lon"]) for p in via] + [(b_lat, b_lon)]
@@ -101,5 +105,11 @@ def plan_route(a_lat, a_lon, b_lat, b_lon) -> dict:
 
     # A Jammu-Kashmir trip crosses the hills even when no hill town is an endpoint.
     regions = {start, end} | ({"HIL"} if {start, end} == {"JMU", "KSH"} else set())
-    return {"km": round(km, 1), "minutes": round(minutes), "path": path,
-            "start_region": start, "end_region": end, "regions": sorted(regions)}
+    result = {"km": round(km, 1), "minutes": round(minutes), "path": path, "routed": False,
+              "start_region": start, "end_region": end, "regions": sorted(regions)}
+
+    road = road_route(a_lat, a_lon, b_lat, b_lon)
+    if road:
+        result.update(km=road["km"], minutes=max(1, round(road["minutes"] * TRAFFIC_FACTOR)),
+                      path=road["path"], routed=True)
+    return result

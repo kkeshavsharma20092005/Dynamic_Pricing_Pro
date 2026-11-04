@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta name="theme-color" content="#000000" />
+  <meta name="theme-color" content="#ffffff" />
   <title>Raahi Admin</title>
   <link rel="icon" href="/static/icons/icon-192.png" />
   <link rel="stylesheet" href="/static/app.css" />
@@ -18,9 +18,31 @@
   <div id="auth" class="auth-photo"><div id="auth-form"></div><div id="auth-credit" class="auth-credit"></div></div>
   <main id="app" class="admin hidden">
     <div id="admin-banner"></div>
-    <div id="stats" class="cards" style="margin-top:12px"></div>
+    <nav class="admin-nav" aria-label="Admin sections">
+      <a href="#stats">Overview</a><a href="#business">Business &amp; profit</a><a href="#conditions">Conditions</a>
+      <a href="#limits">Fair-price limits</a><a href="#rivals">Rival rates</a><a href="#strategies">Strategies</a><a href="#rides">Recent rides</a>
+    </nav>
+    <div id="stats" class="cards section" style="margin-top:12px"></div>
 
-    <section class="section">
+    <section class="section" id="business">
+      <h2>Business model: profit on every ride</h2>
+      <p class="muted">Where each rupee of a fare goes: GST, Raahi's commission, the driver's payout and fuel, and Raahi's own costs per ride.
+        All rates are demo assumptions you can change below. Each ride keeps the rates that applied when it was booked.</p>
+      <div id="biz-totals" class="cards"></div>
+      <div class="grid3" style="margin-top:10px">
+        <div class="card stack"><h3>How one ride makes money</h3><div class="row" id="biz-sample-pick" style="flex-wrap:wrap"></div><div id="biz-flow"></div></div>
+        <div class="card" style="overflow-x:auto"><h3>By vehicle (completed rides)</h3><table id="biz-vehicles"></table></div>
+      </div>
+      <div class="card" style="margin-top:10px;overflow-x:auto">
+        <h3>Every ride</h3>
+        <p class="muted">Only completed rides count towards profit. Other rows show what the ride would earn.</p>
+        <table id="biz-rides"></table>
+      </div>
+      <div class="row" style="max-width:220px;margin-top:10px"><button id="biz-export" type="button" class="secondary">Download CSV</button></div>
+      <form id="biz-form" class="card stack" style="margin-top:10px"></form>
+    </section>
+
+    <section class="section" id="conditions">
       <h2>Conditions by region</h2>
       <p class="muted">These feed the pricing engine for new quotes. A closed region blocks trips between regions that pass through it.</p>
       <div class="row" id="presets" style="flex-wrap:wrap"></div>
@@ -28,20 +50,20 @@
       <div id="regions" class="grid3" style="margin-top:10px"></div>
     </section>
 
-    <section class="section">
+    <section class="section" id="limits">
       <h2>Fair-price limits</h2>
       <p class="muted">The highest multiplier a rider can be charged. The hardship limit applies during snow, storms and road closures.</p>
       <form id="caps" class="row" style="max-width:480px;align-items:end"></form>
       <div id="caps-note" class="muted"></div>
     </section>
 
-    <section class="section">
+    <section class="section" id="rivals">
       <h2>Assumed rival rates</h2>
       <p class="muted">These are placeholder rates, not Rapido or Uber prices. Riders see them only as labelled estimates, and the pricing engine reads them as rival prices.</p>
       <div id="rival-rates" class="grid3"></div>
     </section>
 
-    <section class="section">
+    <section class="section" id="strategies">
       <h2>Pricing strategy comparison</h2>
       <p id="sim-note" class="muted"></p>
       <div class="card">
@@ -52,7 +74,7 @@
       <div class="row" style="max-width:220px;margin-top:10px"><button id="sim-export" type="button" class="secondary">Download CSV</button></div>
     </section>
 
-    <section class="section">
+    <section class="section" id="rides">
       <h2>Recent rides</h2>
       <div class="card" style="overflow-x:auto"><table id="recent"></table></div>
     </section>

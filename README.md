@@ -43,6 +43,16 @@ password once. To choose your own, set `ADMIN_PASSWORD` before the first start. 
 To see a real driver handle a ride, open the driver app in a second browser profile, go online near
 the pickup, and book a matching vehicle. If no real driver accepts, a simulated one takes the ride.
 
+### Accounts that survive restarts (PostgreSQL)
+
+Locally the app stores accounts and rides in `data/app.db` (SQLite). Hosts with a wiped disk,
+like Render's free plan, lose that file every time the service sleeps. Set `DATABASE_URL` to a
+PostgreSQL connection string (a free [Neon](https://neon.tech) project works) and the app uses
+it instead, creating its tables on first start.
+
+Routes follow real roads using the public OSRM server on OpenStreetMap data. Set `OSRM_URL` to
+use your own server, or `ROAD_ROUTING=0` to fall back to estimated distances.
+
 ### Rebuild the model and results (about 10 minutes)
 
 ```bash

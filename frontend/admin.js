@@ -185,14 +185,14 @@ async function renderSimulation() {
     type: "bar",
     data: {
       labels: rows.map(r => r.name),
-      datasets: [{ data: rows.map(r => +r.profit_vs_fixed_pct.toFixed(1)), backgroundColor: "#2dd4bf", borderRadius: 4, maxBarThickness: 18 }],
+      datasets: [{ data: rows.map(r => +r.profit_vs_fixed_pct.toFixed(1)), backgroundColor: "#111111", borderRadius: 4, maxBarThickness: 18 }],
     },
     options: {
       indexAxis: "y", responsive: true, maintainAspectRatio: false, animation: false,
       plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => `${c.parsed.x >= 0 ? "+" : ""}${c.parsed.x}% vs. fixed fares` } } },
       scales: {
-        x: { title: { display: true, text: "Profit change (%)", color: "#a3a3a3" }, ticks: { color: "#a3a3a3" }, grid: { color: "#262626" } },
-        y: { ticks: { color: "#f5f5f5" }, grid: { display: false } },
+        x: { title: { display: true, text: "Profit change (%)", color: "#6b6b6b" }, ticks: { color: "#6b6b6b" }, grid: { color: "#eeeeee" } },
+        y: { ticks: { color: "#111111" }, grid: { display: false } },
       },
     },
   });
@@ -206,6 +206,145 @@ async function renderSimulation() {
   };
 }
 
+// ------------------------------------------------------------------ business model
+const VEHICLE_NAMES = { bike: "Bike", erickshaw: "E-rickshaw", auto: "Auto", cab: "Cab", shared: "Shared cab (per seat)" };
+const money = n => (n < 0 ? "−" : "") + "₹" + Math.abs(n).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const signed = n => el("span", { class: n < 0 ? "loss" : "profit" }, money(n));
+let business = null, sampleVehicle = "cab";
+
+function flowRow(label, value, kind = "") {
+  return el("div", { class: "flow-row " + kind }, el("span", {}, label), typeof value === "number" ? money(value) : value);
+}
+
+// One ride, top to bottom: what the rider pays, and who ends up with each part of it.
+function renderFlow() {
+  const e = business.sample_10km[sampleVehicle];
+  fill($("biz-sample-pick"), Object.keys(business.sample_10km).map(v => el("button", {
+    type: "button", class: "chip", "aria-pressed": String(v === sampleVehicle),
+    onclick: () => { sampleVehicle = v; renderFlow(); },
+  }, VEHICLE_NAMES[v] || v)));
+  fill($("biz-flow"),
+    el("div", { class: "muted" }, `A 10 km ${(VEHICLE_NAMES[sampleVehicle] || sampleVehicle).toLowerCase()} trip at the normal fare`),
+    flowRow("Rider pays", e.fare, "total"),
+    flowRow(`GST (${business.assumptions.gst_pct}%, to government)`, -e.gst, "sub"),
+    flowRow("Net fare", e.net_fare),
+    flowRow(`Raahi commission (${e.commission_pct}%)`, e.commission, "sub"),
+    flowRow("Driver payout", e.driver_payout, "sub"),
+    flowRow("Driver fuel, incl. drive to pickup", -e.driver_fuel, "sub"),
+    flowRow("Driver takes home", signed(e.driver_net), "total"),
+    el("div", { class: "muted", style: "margin-top:8px" }, "Raahi's side of the same ride"),
+    flowRow("Commission earned", e.commission),
+    flowRow(`Payment processing (${business.assumptions.payment_pct}%)`, -e.payment_fee, "sub"),
+    flowRow("Trip insurance", -e.insurance, "sub"),
+    flowRow("Operations (support, maps, servers)", -e.ops, "sub"),
+    flowRow(`Raahi profit (${e.margin_pct}% of fare)`, signed(e.profit), "total"));
+}
+
+function renderBusinessTotals() {
+  const s = business.totals;
+  const tile = (label, value, note) => el("div", { class: "card" }, el("div", { class: "muted" }, label),
+    el("div", { class: "stat" }, value), note && el("div", { class: "muted" }, note));
+  fill($("biz-totals"),
+    tile("Completed rides", s.rides.toLocaleString("en-IN")),
+    tile("Gross bookings", money(s.fare), "What riders paid"),
+    tile("Raahi revenue", money(s.commission), "Commission"),
+    tile("Raahi costs", money(s.platform_costs), "Payments, insurance, operations"),
+    tile("Net profit", signed(s.profit), `${s.margin_pct}% of bookings`),
+    tile("Profit per ride", signed(s.avg_profit), `Average fare ${money(s.avg_fare)}`),
+    tile("Drivers took home", money(s.driver_net), `After ${money(s.driver_fuel)} fuel`),
+    tile("GST collected", money(s.gst)),
+    tile("Dynamic pricing effect", signed(s.pricing_effect), "Fares vs. the plain fare card"),
+    tile("Loss-making rides", s.loss_rides.toLocaleString("en-IN")));
+}
+
+function renderBusinessVehicles() {
+  const rows = Object.entries(business.by_vehicle);
+  fill($("biz-vehicles"),
+    el("thead", {}, el("tr", {}, el("th", {}, "Vehicle"), ["Rides", "Bookings", "Revenue", "Profit", "Per ride", "Margin"].map(h => el("th", { class: "num" }, h)))),
+    el("tbody", {}, rows.length ? rows.map(([, s]) => el("tr", {},
+      el("td", {}, s.label), el("td", { class: "num" }, String(s.rides)), el("td", { class: "num" }, money(s.fare)),
+      el("td", { class: "num" }, money(s.commission)), el("td", { class: "num" }, signed(s.profit)),
+      el("td", { class: "num" }, signed(s.avg_profit)), el("td", { class: "num" }, `${s.margin_pct}%`)))
+      : el("tr", {}, el("td", { colSpan: 7, class: "muted" }, "No completed rides yet."))));
+}
+
+// [heading, value, numeric column, is money]
+const RIDE_COLUMNS = [
+  ["#", r => r.id], ["Trip", r => r.trip], ["Vehicle", r => r.label], ["Status", r => r.status.replace("_", " ")],
+  ["km", r => r.km, true], ["×", r => r.multiplier.toFixed(2), true],
+  ["Fare", r => r.economics.fare, true, true], ["GST", r => r.economics.gst, true, true],
+  ["Commission", r => r.economics.commission, true, true], ["Driver payout", r => r.economics.driver_payout, true, true],
+  ["Driver fuel", r => r.economics.driver_fuel, true, true], ["Driver net", r => r.economics.driver_net, true, true],
+  ["Raahi costs", r => r.economics.platform_costs, true, true], ["Profit", r => r.economics.profit, true, true],
+  ["Margin", r => `${r.economics.margin_pct}%`, true],
+];
+
+function renderBusinessRides() {
+  fill($("biz-rides"),
+    el("thead", {}, el("tr", {}, RIDE_COLUMNS.map(([h, , num]) => el("th", { class: num ? "num" : "" }, h)))),
+    el("tbody", {}, business.rides.length ? business.rides.map(r => el("tr", { class: r.counted ? "" : "not-counted" },
+      RIDE_COLUMNS.map(([h, value, num, isMoney]) => {
+        const v = value(r);
+        return el("td", { class: num ? "num" : "" }, h === "Profit" ? signed(v) : isMoney ? money(v) : String(v));
+      })))
+      : el("tr", {}, el("td", { colSpan: RIDE_COLUMNS.length, class: "muted" }, "No rides yet. Book one from the customer app."))));
+
+  $("biz-export").onclick = () => {
+    const cell = v => `"${String(v).replace(/"/g, '""')}"`;
+    const csv = [RIDE_COLUMNS.map(([h]) => cell(h)).join(","),
+      ...business.rides.map(r => RIDE_COLUMNS.map(([, value]) => cell(value(r))).join(","))].join("\n");
+    const link = el("a", { href: URL.createObjectURL(new Blob([csv], { type: "text/csv" })), download: "raahi_ride_profit.csv" });
+    link.click();
+    URL.revokeObjectURL(link.href);
+  };
+}
+
+function renderBusinessForm() {
+  const a = business.assumptions;
+  const number = (id, value, max, step = 0.5) => el("input", { id, type: "number", min: 0, max, step, value });
+  const field = (label, input) => el("div", {}, el("label", { htmlFor: input.id }, label), input);
+  const general = {
+    gst_pct: number("biz-gst", a.gst_pct, 28), payment_pct: number("biz-pay", a.payment_pct, 10, 0.1),
+    insurance_per_ride: number("biz-ins", a.insurance_per_ride, 100), ops_per_ride: number("biz-ops", a.ops_per_ride, 200),
+    pickup_km: number("biz-pickup", a.pickup_km, 20, 0.1),
+  };
+  const commission = Object.fromEntries(Object.entries(a.commission_pct).map(([v, x]) => [v, number(`biz-com-${v}`, x, 50)]));
+  const fuel = Object.fromEntries(Object.entries(a.fuel_per_km).map(([v, x]) => [v, number(`biz-fuel-${v}`, x, 50, 0.1)]));
+  const note = el("div", { class: "muted", role: "status" });
+  const values = inputs => Object.fromEntries(Object.entries(inputs).map(([k, input]) => [k, +input.value]));
+
+  fill($("biz-form"),
+    el("h3", {}, "Business assumptions"),
+    el("div", { class: "biz-form-grid" },
+      field("GST %", general.gst_pct), field("Payment fee %", general.payment_pct),
+      field("Insurance ₹/ride", general.insurance_per_ride), field("Operations ₹/ride", general.ops_per_ride),
+      field("Drive to pickup, km", general.pickup_km)),
+    el("div", { class: "muted" }, "Raahi commission % by vehicle"),
+    el("div", { class: "biz-form-grid" }, Object.entries(commission).map(([v, input]) => field(VEHICLE_NAMES[v] || v, input))),
+    el("div", { class: "muted" }, "Driver fuel or charging ₹/km by vehicle"),
+    el("div", { class: "biz-form-grid" }, Object.entries(fuel).map(([v, input]) => field(VEHICLE_NAMES[v] || v, input))),
+    el("div", { class: "row", style: "max-width:220px" }, el("button", { type: "submit" }, "Save")),
+    note);
+  $("biz-form").onsubmit = async event => {
+    event.preventDefault();
+    try {
+      await api("/admin/business", { method: "PUT", body: { ...values(general), commission_pct: values(commission), fuel_per_km: values(fuel) } });
+      note.textContent = "Saved. New rides use these rates; past rides keep theirs.";
+      await refreshBusiness();
+    } catch (e) { note.textContent = e.message; }
+  };
+}
+
+async function refreshBusiness({ form = false } = {}) {
+  business = await api("/admin/business");
+  if (!business.sample_10km[sampleVehicle]) sampleVehicle = Object.keys(business.sample_10km)[0];
+  renderBusinessTotals();
+  renderFlow();
+  renderBusinessVehicles();
+  renderBusinessRides();
+  if (form) renderBusinessForm();
+}
+
 async function start() {
   hideAuth();
   $("app").classList.remove("hidden");
@@ -216,18 +355,19 @@ async function start() {
   await renderRivalRates();
   await refreshPreview();
   await refreshStats();
+  await refreshBusiness({ form: true });
   await renderSimulation();
-  connectLive(event => { if (event.type === "ride") refreshStats().catch(() => {}); });
+  connectLive(event => {
+    if (event.type === "ride") { refreshStats().catch(() => {}); refreshBusiness().catch(() => {}); }
+  });
 }
 
 (async function init() {
   useAccount("admin");
   setupShell("Raahi Admin");
   await loadPhotos();
-  if (token()) {
-    const me = await api("/me").catch(() => null);
-    if (me && me.role === "admin") return start();
-  }
+  if (await signedInUser("admin")) return start();
+  fill($("auth-form"));
   showAuthPhoto("krimchi-temples");
   renderAuth($("auth-form"), "admin", start);
 })();

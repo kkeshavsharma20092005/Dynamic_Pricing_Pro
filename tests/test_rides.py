@@ -4,6 +4,7 @@ import sys
 import time
 import unittest
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "backend"))
@@ -13,9 +14,11 @@ import testenv  # noqa: F401  (must precede the backend imports)
 from fastapi.testclient import TestClient
 
 import appdb
+import business
 import fares
 import places
 import rides
+import routing
 from main import app
 
 JAMMU = {"lat": 32.7266, "lon": 74.8570, "name": "Jammu City"}
@@ -77,6 +80,47 @@ class RideAppTests(unittest.TestCase):
 
     def quote(self, headers, pickup=JAMMU, dropoff=GANDHI_NAGAR):
         return self.client.post("/api/quote", headers=headers, json={"pickup": pickup, "dropoff": dropoff})
+
+    # ---------------------------------------------------------------- business model
+    def book(self, rider, vehicle="cab"):
+        response = self.client.post("/api/rides", headers=rider, json={
+            "pickup": JAMMU, "dropoff": GANDHI_NAGAR, "vehicle": vehicle})
+        self.assertEqual(response.status_code, 200, response.text)
+        return response.json()
+
+    def test_business_numbers_are_admin_only(self):
+        rider = self.account()
+        ride = self.book(rider)
+        try:
+            self.assertNotIn("business", ride["quote"])
+            self.assertEqual(self.client.get("/api/admin/business", headers=rider).status_code, 403)
+            report = self.client.get("/api/admin/business", headers=self.admin).json()
+            row = next(r for r in report["rides"] if r["id"] == ride["id"])
+            econ = row["economics"]
+            self.assertFalse(row["counted"])          # not completed, so not in the profit totals
+            self.assertAlmostEqual(econ["fare"], ride["fare"])
+            self.assertAlmostEqual(econ["gst"] + econ["commission"] + econ["driver_payout"], econ["fare"], places=1)
+            self.assertAlmostEqual(econ["profit"], econ["commission"] - econ["platform_costs"], places=1)
+            self.assertIn("cab", report["sample_10km"])
+        finally:
+            self.client.post(f"/api/rides/{ride['id']}/cancel", headers=rider)
+
+    def test_new_business_rates_apply_to_new_rides_only(self):
+        rider = self.account()
+        before = self.book(rider)
+        self.client.post(f"/api/rides/{before['id']}/cancel", headers=rider)
+        try:
+            bad = self.client.put("/api/admin/business", headers=self.admin, json={"commission_pct": {"cab": 90}})
+            self.assertEqual(bad.status_code, 422)
+            ok = self.client.put("/api/admin/business", headers=self.admin, json={"commission_pct": {"cab": 30}})
+            self.assertEqual(ok.status_code, 200, ok.text)
+            after = self.book(rider)
+            self.client.post(f"/api/rides/{after['id']}/cancel", headers=rider)
+            rows = {r["id"]: r for r in self.client.get("/api/admin/business", headers=self.admin).json()["rides"]}
+            self.assertEqual(rows[before["id"]]["economics"]["commission_pct"], 20.0)
+            self.assertEqual(rows[after["id"]]["economics"]["commission_pct"], 30.0)
+        finally:
+            appdb.set_setting("business_model", business.DEFAULT_ASSUMPTIONS)
 
     # ---------------------------------------------------------------- accounts
     def test_wrong_password_and_bad_phone_are_rejected(self):
@@ -251,6 +295,7 @@ class RideAppTests(unittest.TestCase):
         self.client.post(f"/api/rides/{ride['id']}/cancel", headers=rider)
 
 
+@unittest.skipIf(appdb.USE_POSTGRES, "upgrades an old SQLite file; PostgreSQL databases start new")
 class MigrationTests(unittest.TestCase):
     def test_old_one_account_per_number_database_is_upgraded(self):
         original = appdb.DB_PATH
@@ -281,6 +326,52 @@ class FareTests(unittest.TestCase):
     def test_sialkot_and_delhi_are_outside_the_service_area(self):
         self.assertFalse(places.in_service_area(32.49, 74.53))
         self.assertFalse(places.in_service_area(28.61, 77.21))
+
+
+class BusinessModelTests(unittest.TestCase):
+    def test_every_rupee_of_the_fare_is_accounted_for(self):
+        e = business.ride_economics(105, 10, "cab", 100, business.DEFAULT_ASSUMPTIONS)
+        self.assertAlmostEqual(e["gst"], 5.0)                 # 5% GST inside a ₹105 fare
+        self.assertAlmostEqual(e["commission"], 20.0)         # 20% of the ₹100 net fare
+        self.assertAlmostEqual(e["driver_payout"], 80.0)
+        self.assertAlmostEqual(e["driver_fuel"], (10 + 1.5) * 7.5)
+        self.assertAlmostEqual(e["profit"], 20 - 105 * 0.02 - 2 - 3)
+        self.assertAlmostEqual(e["pricing_effect"], 5.0)
+
+    def test_out_of_range_assumptions_are_refused(self):
+        with self.assertRaises(ValueError):
+            business.validate({"gst_pct": 40})
+        with self.assertRaises(ValueError):
+            business.validate({"fuel_per_km": {"rocket": 3}})
+
+
+class RoadRoutingTests(unittest.TestCase):
+    def setUp(self):
+        routing._cache.clear()
+        routing._down_until = 0.0
+        patcher = mock.patch.object(routing, "ENABLED", True)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def test_route_follows_the_road_when_routing_answers(self):
+        answer = mock.Mock(status_code=200)
+        answer.json.return_value = {"code": "Ok", "routes": [{"distance": 7200.0, "duration": 600.0, "geometry": {
+            "coordinates": [[74.857, 32.727], [74.850, 32.715], [74.845, 32.700], [74.838, 32.690], [74.837, 32.689]]}}]}
+        with mock.patch.object(routing.httpx, "get", return_value=answer):
+            route = places.plan_route(32.7266, 74.8570, 32.6891, 74.8374)
+        self.assertTrue(route["routed"])
+        self.assertEqual(route["km"], 7.2)
+        self.assertEqual(route["minutes"], 12)                # 10 min of free-flow driving, plus traffic
+        self.assertEqual(route["path"][0], [32.7266, 74.8570])  # starts at the pin, not the road
+        self.assertEqual(len(route["path"]), 7)
+
+    def test_falls_back_to_the_estimate_when_routing_fails(self):
+        with mock.patch.object(routing.httpx, "get", side_effect=routing.httpx.ConnectError("down")) as get:
+            first = places.plan_route(32.7266, 74.8570, 32.6891, 74.8374)
+            places.plan_route(32.7266, 74.8570, 34.07, 74.81)
+        self.assertFalse(first["routed"])
+        self.assertGreater(first["km"], 0)
+        self.assertEqual(get.call_count, 1)                   # backs off instead of waiting again
 
 
 if __name__ == "__main__":
