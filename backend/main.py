@@ -134,6 +134,22 @@ def health():
 
 
 # ------------------------------------------------------------------ frontend
+@app.middleware("http")
+async def cache_policy(request, call_next):
+    """
+    Pages, styles and scripts must be re-checked on every load, or a browser keeps using
+    an old stylesheet with new HTML after a deploy (a broken-looking page). Re-checking
+    is cheap: an unchanged file answers 304 with no body. Photos change rarely, so a day.
+    """
+    response = await call_next(request)
+    path = request.url.path
+    if path.startswith("/static/photos/") or path.startswith("/static/icons/"):
+        response.headers.setdefault("Cache-Control", "public, max-age=86400")
+    elif not path.startswith("/api/"):
+        response.headers.setdefault("Cache-Control", "no-cache")
+    return response
+
+
 if FRONTEND.exists():
     app.mount("/static", StaticFiles(directory=FRONTEND), name="static")
 

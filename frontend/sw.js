@@ -1,9 +1,9 @@
 // Keeps the app shell available on weak mountain networks. API calls are never cached:
 // a stale fare or ride status would be worse than a clear "you are offline" message.
-const CACHE = "raahi-v12";
+const CACHE = "raahi-v13";
 const SHELL = [
   "/", "/ride", "/driver",
-  "/static/app.css", "/static/common.js", "/static/home.js", "/static/chat.js", "/static/rider.js", "/static/driver.js",
+  "/static/app.css?v=13", "/static/common.js?v=13", "/static/home.js?v=13", "/static/chat.js?v=13", "/static/rider.js?v=13", "/static/driver.js?v=13",
   "/static/photos/photos.json",
   "/static/manifest.webmanifest", "/static/icons/icon-192.png",
 ];
@@ -26,7 +26,8 @@ self.addEventListener("fetch", event => {
 
   // Network first, so a deployed update is seen as soon as there is signal.
   event.respondWith(
-    fetch(event.request)
+    // no-cache: always ask the server (a cheap 304 when unchanged), never a stale HTTP copy.
+    fetch(event.request, { cache: "no-cache" })
       .then(response => {
         const copy = response.clone();
         caches.open(CACHE).then(cache => cache.put(event.request, copy));
