@@ -66,11 +66,12 @@ async function refreshStats() {
     tile("Cancelled", o.cancelled.toLocaleString("en-IN")),
     tile("Riders", (o.users.rider || 0).toLocaleString("en-IN")),
     tile("Drivers online", o.drivers_online.toLocaleString("en-IN")),
-    tile("Recent fares at limit", `${o.rides_capped} of ${o.recent.length}`));
+    tile("Recent fares at limit", `${o.rides_capped} of ${o.recent.length}`),
+    tile("Rider rating", o.ratings.count ? `★ ${o.ratings.average.toFixed(1)} (${o.ratings.count.toLocaleString("en-IN")})` : "No ratings yet"));
 
   $("recent").replaceChildren(
     el("thead", {}, el("tr", {}, ["Trip", "Rider", "Driver", "Vehicle", "Status"].map(h => el("th", {}, h)),
-      el("th", { class: "num" }, "Fare"), el("th", { class: "num" }, "Multiplier"))),
+      el("th", { class: "num" }, "Fare"), el("th", { class: "num" }, "Multiplier"), el("th", {}, "Feedback"))),
     el("tbody", {}, o.recent.map(r => el("tr", {},
       el("td", {}, `${r.pickup.name} → ${r.dropoff.name}`, r.women_only && el("span", { class: "tag women", title: "Women Raahi: women drivers only" }, " 🌸 Women Raahi")),
       el("td", {}, r.rider ? r.rider.name : ""),
@@ -78,7 +79,9 @@ async function refreshStats() {
       el("td", {}, r.quote.label),
       el("td", {}, r.status.replace("_", " ")),
       el("td", { class: "num" }, rupees(r.fare)),
-      el("td", { class: "num" }, "×" + r.quote.multiplier.toFixed(2))))));
+      el("td", { class: "num" }, "×" + r.quote.multiplier.toFixed(2)),
+      el("td", { title: r.feedback ? r.feedback.comment : "" }, r.feedback
+        ? `${"★".repeat(r.feedback.rating)}${r.feedback.comment ? " · " + r.feedback.comment.slice(0, 40) : ""}` : "—")))));
 }
 
 function regionCard(code, data) {

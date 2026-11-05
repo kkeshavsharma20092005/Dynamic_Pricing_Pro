@@ -5,9 +5,11 @@ Trips follow real roads through OSRM (see routing.py): road distance, drive time
 line drawn on the map. If routing is unavailable, the fallback is an estimate: straight-line
 distance times a terrain factor, passing through the real corridor towns between regions.
 """
+import gzip
+import json
 from math import asin, cos, radians, sin, sqrt
 
-from config import REGIONS
+from config import DATA_DIR, REGIONS
 from routing import road_route
 
 # OSRM drive times assume free-flowing traffic. J&K city traffic, ghat sections and
@@ -74,8 +76,40 @@ def set_coverage(cells: set):
     _coverage.update(cells)
 
 
+BOUNDARY_FILE = DATA_DIR / "jk_boundary.json.gz"     # built by data_pipeline/build_places.py
+
+
+def _load_boundary() -> list:
+    """J&K's boundary rings, each with its bounding box for a quick first check."""
+    if not BOUNDARY_FILE.exists():
+        return []
+    rings = json.loads(gzip.open(BOUNDARY_FILE, "rt", encoding="utf-8").read())["rings"]
+    return [(ring, min(p[0] for p in ring), max(p[0] for p in ring), min(p[1] for p in ring), max(p[1] for p in ring))
+            for ring in rings]
+
+
+_boundary = _load_boundary()
+
+
+def inside_jk(lat: float, lon: float) -> bool:
+    """Ray casting over J&K's real boundary (even-odd, so enclaves and holes work)."""
+    inside = False
+    for ring, lat_lo, lat_hi, lon_lo, lon_hi in _boundary:
+        if not (lat_lo <= lat <= lat_hi and lon_lo <= lon <= lon_hi):
+            continue
+        for (ay, ax), (by, bx) in zip(ring, ring[1:]):
+            if (ay > lat) != (by > lat) and lon < ax + (lat - ay) * (bx - ax) / (by - ay):
+                inside = not inside
+    return inside
+
+
 def in_service_area(lat: float, lon: float) -> bool:
-    """Close to a J&K town, or in a square with J&K places. Approximate near a border."""
+    """
+    Anywhere inside Jammu & Kashmir's boundary can be booked, even a spot with no named place.
+    Without the boundary file, fall back to: near a J&K town, or in a square with J&K places.
+    """
+    if _boundary:
+        return inside_jk(lat, lon)
     p = nearest_place(lat, lon)
     if distance_km(lat, lon, p["lat"], p["lon"]) <= 12.0:
         return True

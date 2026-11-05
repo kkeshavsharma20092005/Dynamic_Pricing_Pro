@@ -21,11 +21,22 @@ GENERIC = {t for w in ("mandir temple shrine masjid mosque dargah gurudwara ziya
                        "मंदिर मस्जिद दरगाह गुरुद्वारा مندر مسجد درگاہ زیارت گردوارہ").split() for t in normalise(w)}
 RANK = {"city": 8, "town": 7, "suburb": 5, "neighbourhood": 5, "quarter": 5, "worship": 5, "tourism": 5, "historic": 5,
         "railway": 5, "aeroway": 6, "hospital": 4, "college": 3, "university": 4, "bus_station": 4, "village": 3,
-        "locality": 3, "natural": 3, "leisure": 3, "hamlet": 1, "school": 0}
+        "locality": 3, "natural": 3, "leisure": 3, "hamlet": 1, "school": 0,
+        "mall": 4, "marketplace": 4, "bus_stop": 4, "fuel": 3, "police": 3, "bank": 2, "clinic": 2, "hotel": 3,
+        "road": 3, "post_office": 2, "courthouse": 3, "townhall": 3, "cinema": 3, "pharmacy": 1, "restaurant": 1,
+        "cafe": 1, "shop": 1, "office": 1, "atm": 0, "doctors": 1, "dentist": 0, "landmark": 1, "amenity": 1,
+        "isolated_dwelling": 0}
 LABELS = {"worship": "Temple or shrine", "city": "City", "town": "Town", "village": "Village", "hamlet": "Hamlet",
           "hospital": "Hospital", "college": "College", "university": "University", "school": "School",
           "railway": "Railway station", "aeroway": "Airport", "bus_station": "Bus stand", "tourism": "Tourist spot",
-          "historic": "Historic place", "natural": "Natural landmark", "leisure": "Park"}
+          "historic": "Historic place", "natural": "Natural landmark", "leisure": "Park",
+          "mall": "Mall", "shop": "Shop", "marketplace": "Market", "bus_stop": "Bus stop", "fuel": "Petrol pump",
+          "police": "Police station", "bank": "Bank", "atm": "ATM", "clinic": "Clinic", "doctors": "Clinic",
+          "dentist": "Dental clinic", "pharmacy": "Chemist", "hotel": "Hotel", "restaurant": "Restaurant",
+          "cafe": "Cafe", "road": "Road", "office": "Office", "post_office": "Post office", "courthouse": "Court",
+          "townhall": "Town hall", "cinema": "Cinema", "library": "Library", "kindergarten": "School",
+          "isolated_dwelling": "Settlement", "locality": "Locality", "suburb": "Area", "neighbourhood": "Area",
+          "quarter": "Area", "landmark": "Landmark", "amenity": "Landmark"}
 URDU_SOUNDS = str.maketrans({
     "ب": "b", "پ": "p", "ت": "t", "ٹ": "t", "ث": "s", "ج": "j", "چ": "c", "خ": "k", "د": "d", "ڈ": "d", "ذ": "z",
     "ر": "r", "ڑ": "r", "ز": "z", "ژ": "z", "س": "s", "ش": "s", "ص": "s", "ض": "z", "ط": "t", "ظ": "z", "ف": "f",

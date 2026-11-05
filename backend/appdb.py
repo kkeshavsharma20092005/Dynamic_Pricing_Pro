@@ -115,6 +115,15 @@ CREATE TABLE IF NOT EXISTS verifications (
     reviewed_at REAL
 );
 CREATE INDEX IF NOT EXISTS verifications_status ON verifications(status);
+CREATE TABLE IF NOT EXISTS feedback (
+    id INTEGER PRIMARY KEY,
+    ride_id INTEGER NOT NULL UNIQUE REFERENCES rides(id),
+    rider_id INTEGER NOT NULL REFERENCES users(id),
+    rating INTEGER NOT NULL CHECK (rating BETWEEN 1 AND 5),
+    tags TEXT NOT NULL,
+    comment TEXT NOT NULL,
+    created_at REAL NOT NULL
+);
 CREATE TABLE IF NOT EXISTS settings (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL

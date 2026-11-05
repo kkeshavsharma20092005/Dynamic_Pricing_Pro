@@ -63,34 +63,43 @@ function driverHistory() {
       el("div", { class: "muted" }, `${done.length} completed · ${rupees(earned)} in fares`),
       ...rides.slice(0, 10).map(r => el("div", { class: "history-item" },
         `${r.pickup.name} → ${r.dropoff.name}`,
-        el("div", { class: "muted" }, `${rupees(r.fare)} · ${t(STATUS_TEXT[r.status])}`))));
+        el("div", { class: "muted" }, `${rupees(r.fare)} · ${t(STATUS_TEXT[r.status])}${r.feedback ? ` · rider gave ${"★".repeat(r.feedback.rating)}` : ""}`))));
   }).catch(() => list.replaceChildren());
   return list;
 }
 
 function renderOffer() {
-  let left = offer.seconds;
-  const count = el("span", {}, String(left));
-  const bar = el("div", { class: "progress-bar shrink", style: `animation-duration:${offer.seconds}s` });
+  // Counted against a fixed end time, so redrawing the screen never restarts the clock.
+  const secondsLeft = () => Math.max(0, Math.ceil((offer.expires - Date.now()) / 1000));
+  const count = el("span", {}, String(secondsLeft()));
+  const bar = el("div", { class: "progress-bar shrink",
+    style: `animation-duration:${offer.seconds}s;animation-delay:-${offer.seconds - secondsLeft()}s` });
   clearInterval(offerTimer);
-  offerTimer = setInterval(() => { left -= 1; count.textContent = String(Math.max(left, 0)); }, 1000);
+  offerTimer = setInterval(() => { if (offer) count.textContent = String(secondsLeft()); }, 1000);
   const answer = async action => {
     clearInterval(offerTimer);
     const current = offer;
     offer = null;
     try {
       const result = await api(`/rides/${current.ride.id}/${action}`, { method: "POST" });
-      if (action === "accept") { ride = result; }
+      if (action === "accept") {
+        ride = result;
+        toast(`✓ Ride accepted. ${result.rider ? result.rider.name + " has been told you are on the way." : ""}`);
+      }
     } catch (e) { toast(e.message); }
     render();
   };
+  const near = offer.to_pickup;
   fill(panel(),
     photoBanner(photoFor(offer.ride.dropoff.name, offer.ride.region), offer.ride.dropoff.name),
     el("div", { class: "status pulse", role: "alert" }, "New ride request · ", count, "s"),
     offer.ride.women_only && womenRideTag(),
     el("div", { class: "progress" }, bar),
-    el("div", {}, `${offer.ride.pickup.name} → ${offer.ride.dropoff.name}`),
-    el("div", { class: "muted" }, `${offer.ride.km} km · ${rupees(offer.ride.fare)} · ${offer.ride.quote.label}`),
+    el("div", { class: "offer-card" },
+      offer.ride.rider && el("strong", {}, `Rider: ${offer.ride.rider.name}`),
+      near && el("div", { class: "offer-pickup" }, `📍 ${near.km} km to pickup · ~${formatMinutes(near.minutes)}`),
+      el("div", {}, `${offer.ride.pickup.name} → ${offer.ride.dropoff.name}`),
+      el("div", { class: "muted" }, `${offer.ride.km} km trip · ${rupees(offer.ride.fare)} · ${offer.ride.quote.label}`)),
     el("div", { class: "row" },
       el("button", { type: "button", class: "secondary", onclick: () => answer("decline") }, "Decline"),
       el("button", { type: "button", onclick: () => answer("accept") }, "Accept")),
@@ -158,7 +167,7 @@ function onLive(event) {
     api("/rides/active").then(active => { if (active) { ride = active; render(); } }).catch(() => {});
     if (online) sendState(true).catch(() => {});
   } else if (event.type === "offer") {
-    offer = event;
+    offer = { ...event, expires: Date.now() + event.seconds * 1000 };
     render();
   } else if (event.type === "offer_gone") {
     if (offer && offer.ride.id === event.ride_id) { offer = null; clearInterval(offerTimer); render(); }

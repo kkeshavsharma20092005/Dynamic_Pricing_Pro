@@ -154,8 +154,8 @@ without one, replies stay as text.
 **Addresses:** riders can name a neighbourhood or lane, such as `bharat nagar talab tillo se roop nagar`,
 or say `meri current location se`, in which case the browser asks for permission and shares the position.
 `mera ghar ... mein hai` saves a home for `ghar chalo`. Places are looked up in this order: the J&K towns,
-a list of Jammu and Srinagar neighbourhoods with Hindi and Urdu names, about 7,600 named J&K places from OpenStreetMap
-stored in the app (villages, temples, mosques, hospitals, stations, tourist spots, built by `data_pipeline/build_places.py`),
+a list of Jammu and Srinagar neighbourhoods with Hindi and Urdu names, about 16,800 named J&K places from OpenStreetMap
+stored in the app (villages, hamlets, temples, mosques, hospitals, schools, markets, malls, chowks, petrol pumps, banks, bus stops, stations and tourist spots, built by `data_pipeline/build_places.py`, which also saves the J&K boundary so any pin inside it can be booked),
 then OpenStreetMap's Nominatim service, which receives the typed address. Words are matched by their consonants, so
 `bawe wali maat`, `बावे वाली माता` and `باوے والی ماتا` find the same temple. A rider can also ask `bawe wali mata kahan hai`
 or `sabse sasta batao`. A result is rejected unless it contains the words asked for, since
