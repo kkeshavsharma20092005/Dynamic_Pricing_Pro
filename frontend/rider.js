@@ -1,5 +1,5 @@
 let map, places = [], pickup = null, dropoff = null, quote = null, chosen = null;
-let ride = null, addMessage = null, liveStarted = false, quoteRun = 0;
+let ride = null, paymentAskedFor = null, addMessage = null, liveStarted = false, quoteRun = 0;
 const layers = { pickup: null, dropoff: null, route: null, driver: null, nearby: [] };
 const panel = () => $("panel");
 const VEHICLE_ICON = { bike: "🛵", erickshaw: "🛺", auto: "🛺", cab: "🚕", shared: "🚐" };
@@ -331,6 +331,7 @@ function showRide(next) {
     el("div", { class: "status" + (ride.status === "searching" ? " pulse" : ""), role: "status" }, t(statusText)),
     ride.women_only && womenBadge(),
     ride.status !== "cancelled" && stepper(ride.status),
+    ride.status === "completed" && paymentCard(ride, { role: "rider" }),
     ride.status === "in_progress" && el("div", {},
       el("div", { class: "progress" }, el("div", { id: "trip-bar", class: "progress-bar" })),
       el("div", { id: "trip-eta", class: "muted" }, `~${formatMinutes(ride.minutes)} ${t("left")}`)),
@@ -353,7 +354,6 @@ function showRide(next) {
       type: "button", class: "danger",
       onclick: () => api(`/rides/${ride.id}/cancel`, { method: "POST" }).then(showRide).catch(e => toast(e.message)),
     }, t("Cancel ride")),
-    ride.status === "completed" && paymentCard(ride),
     ride.status === "completed" && driver && !paymentDue(ride) && (ride.feedback
       ? el("div", { class: "rated" }, el("span", { class: "stars-static", "aria-label": `${ride.feedback.rating} / 5` }, "★".repeat(ride.feedback.rating) + "☆".repeat(5 - ride.feedback.rating)),
           el("span", { class: "muted" }, t("Thanks for rating this trip")))
@@ -361,7 +361,13 @@ function showRide(next) {
     finished && el("button", { type: "button", onclick: resetBooking }, t("Book another ride")),
   );
   // Asked once, right when the trip ends. Skipping is fine: the button above stays.
-  // Payment comes first: feedback is asked once the trip is paid (see the "paid" event).
+  // Payment comes first: a pop-up asks for the fare as soon as the trip ends, and feedback
+  // is asked once it is paid (see the "paid" event).
+  if (ride.status === "completed" && paymentDue(ride) && paymentAskedFor !== ride.id) {
+    paymentAskedFor = ride.id;
+    openPayment(ride, "rider");
+    notifyInBackground(t("Trip completed"), `${t("Pay")} ${rupees(ride.fare)}`);
+  }
   if (statusChanged && ride.status === "completed" && driver && !ride.feedback && !paymentDue(ride)) setTimeout(() => showFeedback(ride), 600);
   if (driver && !finished && !existingChat) addMessage = renderChat(chatArea, ride, "rider");
   updateRideHelp(ride, "rider");
@@ -430,29 +436,6 @@ function showConfirmed(r) {
   gotIt.focus();
   if (navigator.vibrate) navigator.vibrate([120, 60, 120]);
   notifyInBackground(t("Your ride is confirmed"), `${driver.name} · ${t(driver.vehicle)}${eta ? ` · ${formatMinutes(eta.minutes)}` : ""}`);
-}
-
-// ---------- payment received, then feedback
-const paymentDue = r => !!(r.payment && r.payment.status === "due");
-
-function showPaid(r) {
-  closeConfirmed();
-  const old = $("paid-backdrop");
-  if (old) old.remove();
-  const method = r.payment && r.payment.method === "cash" ? t("Cash") : t("QR payment (demo)");
-  const next = () => { backdrop.remove(); if (r.driver && !r.feedback) showFeedback(r); };
-  const backdrop = el("div", { id: "paid-backdrop", class: "confirm-backdrop", onclick: e => { if (e.target === backdrop) next(); } },
-    el("section", { class: "confirm-card", role: "alertdialog", "aria-labelledby": "paid-title" },
-      el("div", { class: "confirm-head" },
-        el("div", { class: "confirm-check", "aria-hidden": "true" }, "✓"),
-        el("h2", { id: "paid-title" }, t("Payment received")),
-        el("p", {}, `${rupees(r.fare)} · ${method}`)),
-      el("div", { class: "muted confirm-note" }, t("Thank you! Your ride is paid.")),
-      el("button", { type: "button", class: "confirm-done", onclick: next }, t("Continue"))));
-  document.body.append(backdrop);
-  if (navigator.vibrate) navigator.vibrate(150);
-  notifyInBackground(t("Payment received"), `${rupees(r.fare)} · ${method}`);
-  setTimeout(() => { if (backdrop.isConnected) next(); }, 2500);
 }
 
 // ---------- optional feedback after a completed trip
@@ -543,6 +526,7 @@ function askToNotify() {
 
 function resetBooking() {
   closeConfirmed();
+  closePayment();
   if ($("paid-backdrop")) $("paid-backdrop").remove();
   const asking = $("feedback-backdrop");
   if (asking) asking.remove();
@@ -581,7 +565,12 @@ function onLive(event) {
     toast(t(me.kyc === "approved" ? "You are verified. Women Raahi is ready." : "Your ID check was not approved."));
     if (!ride) renderBooking();
   } else if (event.type === "paid") {
-    if (!ride || ride.id === event.ride.id) { showRide(event.ride); showPaid(event.ride); }
+    if (!ride || ride.id === event.ride.id) {
+      showRide(event.ride);
+      const paid = event.ride;
+      notifyInBackground(t("Payment received"), rupees(paid.fare));
+      showPaymentReceived(paid, () => { if (paid.driver && !paid.feedback) showFeedback(paid); });
+    }
   } else if (event.type === "confirmed") {
     if (!ride || ride.id === event.ride.id) { showRide(event.ride); showConfirmed(event.ride); }
   } else if (event.type === "position" && ride && ride.id === event.ride_id) {

@@ -1,3 +1,4 @@
+let paymentAskedFor = null;
 let map, places = [], online = false, position = null, ride = null, offer = null, offerTimer = null;
 let addMessage = null, liveStarted = false, routeLine = null, self_marker = null, me = null;
 const panel = () => $("panel");
@@ -127,6 +128,8 @@ function renderRide() {
   fill(panel(),
     photoBanner(photoFor(ride.dropoff.name, ride.region), ride.dropoff.name),
     el("div", { class: "status", role: "status" }, t(STATUS_TEXT[ride.status])),
+    // Show this QR to the rider to collect the fare, or take cash and tap "Cash received".
+    ride.status === "completed" && paymentCard(ride, { role: "driver", onCash: cashReceived }),
     ride.women_only && womenRideTag(),
     el("div", {}, `${ride.pickup.name} → ${ride.dropoff.name}`),
     el("div", { class: "muted" }, `${ride.km} km · ${rupees(ride.fare)} · ${ride.quote.label}`),
@@ -138,18 +141,32 @@ function renderRide() {
     ["accepted", "arrived"].includes(ride.status) && el("button", { type: "button", class: "danger", onclick: () =>
       api(`/rides/${ride.id}/cancel`, { method: "POST" }).then(r => { ride = r; render(); }).catch(e => toast(e.message)) }, t("Cancel ride")),
     !finished && chatArea,
-    // Show this QR to the rider to collect the fare, or take cash and tap "Cash received".
-    ride.status === "completed" && paymentCard(ride, { onCash: () =>
-      api(`/rides/${ride.id}/cash`, { method: "POST" }).then(r => { ride = r; toast(t("Payment received")); render(); }).catch(e => toast(e.message)) }),
     finished && el("button", { type: "button", onclick: backToWaiting }, "Back to waiting"),
   );
   if (!finished && !existing) addMessage = renderChat(chatArea, ride, "driver");
   updateRideHelp(ride, "driver");
+  // The trip has just ended: put the QR in front of the driver to show the rider.
+  if (ride.status === "completed" && paymentDue(ride) && paymentAskedFor !== ride.id) {
+    paymentAskedFor = ride.id;
+    openPayment(ride, "driver", { onCash: cashReceived });
+  }
+}
+
+function cashReceived() {
+  api(`/rides/${ride.id}/cash`, { method: "POST" })
+    .then(r => {
+      const wasDue = paymentDue(ride);     // the live update may already have shown it
+      ride = r;
+      render();
+      if (wasDue) showPaymentReceived(r);
+    })
+    .catch(e => toast(e.message));
 }
 
 function backToWaiting() {
   goScreen("waiting", { replace: true });
   ride = addMessage = null;
+  closePayment();
   updateRideHelp(null);
   if (routeLine) { routeLine.remove(); routeLine = null; }
   render();
@@ -179,7 +196,7 @@ function onLive(event) {
       const justPaid = ride.payment && ride.payment.status === "due" && event.ride.payment && event.ride.payment.status === "paid";
       ride = event.ride;
       render();
-      if (justPaid) toast(`✓ ${t("Payment received")} · ${rupees(ride.fare)}`);
+      if (justPaid) showPaymentReceived(ride);
     }
     if (offer && offer.ride.id === event.ride.id && event.ride.status !== "searching") { offer = null; clearInterval(offerTimer); render(); }
   } else if (event.type === "message" && ride && ride.id === event.message.ride_id && addMessage) {

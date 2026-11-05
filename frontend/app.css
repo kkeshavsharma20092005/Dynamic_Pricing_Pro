@@ -509,3 +509,6 @@ body.women-mode .leaflet-tile-pane { filter: saturate(.45) brightness(1.05) cont
                border-top-color: var(--good); animation: pay-spin .8s linear infinite; }
 .confirm-check.pay-fail { background: var(--danger); box-shadow: 0 0 0 8px var(--danger-bg); }
 @keyframes pay-spin { to { transform: rotate(360deg); } }
+.pay-wait { display: flex; align-items: center; gap: 10px; font-weight: 600; color: var(--ink-2); }
+.pay-spinner.small { width: 22px; height: 22px; margin: 0; border-width: 3px; }
+#pay-backdrop .pay-card { border: 0; padding: 0; }

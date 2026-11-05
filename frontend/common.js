@@ -60,6 +60,8 @@ const STRINGS = {
     "Demo payment: no real money is charged.": "डेमो भुगतान: कोई असली पैसा नहीं कटता।",
     "Open payment page": "भुगतान पेज खोलें", "Cash received": "नकद मिल गया",
     "Thank you! Your ride is paid.": "धन्यवाद! आपकी राइड का भुगतान हो गया।", "Continue": "आगे बढ़ें",
+    "Waiting for your payment…": "आपके भुगतान का इंतज़ार…", "Scan the QR code on your driver's phone to pay": "भुगतान के लिए ड्राइवर के फ़ोन पर QR कोड स्कैन करें",
+    "Or pay cash to the driver.": "या ड्राइवर को नकद दें।", "Show this QR to the rider to collect the fare": "किराया लेने के लिए यह QR सवारी को दिखाएं",
     "How was your ride with": "आपकी राइड कैसी रही,", "Tap a star to rate": "रेटिंग देने के लिए स्टार दबाएं",
     "Terrible": "बहुत खराब", "Bad": "खराब", "Okay": "ठीक-ठाक", "Good": "अच्छी", "Excellent": "बहुत बढ़िया",
     "of 5 stars": "/ 5 स्टार", "Your rating": "आपकी रेटिंग", "Tell us more (optional)": "और बताएं (वैकल्पिक)",
@@ -748,7 +750,12 @@ function buildRideHelp() {
 
 // ---------- paying for a finished trip (demo)
 // The QR opens Raahi's own payment page, not a UPI code, so scanning it never moves real money.
-function paymentCard(ride, { onCash } = {}) {
+// Who shows the QR: with a real driver, the driver's phone (the rider scans it); with a demo
+// driver there is no driver phone, so the rider's own screen shows it.
+const paymentDue = r => !!(r && r.payment && r.payment.status === "due");
+const qrOnThisScreen = (r, role) => role === "driver" || !!(r.driver && r.driver.simulated);
+
+function paymentCard(ride, { role = "rider", onCash } = {}) {
   const p = ride.payment;
   if (!p) return null;
   if (p.status === "paid") {
@@ -758,11 +765,61 @@ function paymentCard(ride, { onCash } = {}) {
         el("div", { class: "muted" }, `${rupees(ride.fare)} · ${p.method === "cash" ? t("Cash") : t("QR payment (demo)")}`)));
   }
   if (!p.pay_path) return null;
-  return el("div", { class: "pay-card" },
-    el("div", { class: "pay-head" }, el("strong", {}, `${t("Pay")} ${rupees(ride.fare)}`), el("span", { class: "tag warn" }, t("Demo"))),
-    el("img", { class: "pay-qr", src: `${p.pay_path}/qr.svg`, alt: t("QR code to pay for this ride"), width: 200, height: 200 }),
-    el("div", { class: "pay-hint" }, t("Scan with your phone camera or Google Lens to pay")),
-    el("div", { class: "muted" }, t("Demo payment: no real money is charged.")),
+  const head = el("div", { class: "pay-head" }, el("strong", {}, `${t("Pay")} ${rupees(ride.fare)}`), el("span", { class: "tag warn" }, t("Demo")));
+  const demoNote = el("div", { class: "muted" }, t("Demo payment: no real money is charged."));
+  if (!qrOnThisScreen(ride, role)) {
+    // A real driver holds the QR: the rider scans it on the driver's phone.
+    return el("div", { class: "pay-card" }, head,
+      el("div", { class: "pay-wait" }, el("span", { class: "pay-spinner small", "aria-hidden": "true" }), t("Waiting for your payment…")),
+      el("div", { class: "pay-hint" }, `📱 ${t("Scan the QR code on your driver's phone to pay")}`),
+      el("div", { class: "muted" }, t("Or pay cash to the driver.")), demoNote);
+  }
+  return el("div", { class: "pay-card" }, head,
+    el("img", { class: "pay-qr", src: `${p.pay_path}/qr.svg`, alt: t("QR code to pay for this ride"), width: 220, height: 220 }),
+    el("div", { class: "pay-hint" }, role === "driver" ? t("Show this QR to the rider to collect the fare") : t("Scan with your phone camera or Google Lens to pay")),
+    demoNote,
     el("a", { href: p.pay_path, target: "_blank", rel: "noopener", class: "linkish" }, t("Open payment page") + " ↗"),
     onCash && el("button", { type: "button", class: "secondary", onclick: onCash }, "💵 " + t("Cash received")));
+}
+
+function closePayment() {
+  const open = $("pay-backdrop");
+  if (open) open.remove();
+}
+
+// The trip has ended: a pop-up asks for the fare, with the QR where it belongs.
+function openPayment(ride, role, options = {}) {
+  closePayment();
+  const card = paymentCard(ride, { role, ...options });
+  if (!card) return;
+  const backdrop = el("div", { id: "pay-backdrop", class: "confirm-backdrop", onclick: e => { if (e.target === backdrop) closePayment(); } },
+    el("section", { class: "confirm-card", role: "dialog", "aria-modal": "true", "aria-labelledby": "pay-title" },
+      el("div", { class: "confirm-head" },
+        el("div", { class: "confirm-check", "aria-hidden": "true" }, "🏁"),
+        el("h2", { id: "pay-title" }, t("Trip completed")),
+        el("p", {}, `${placeLabel(ride.pickup)} → ${placeLabel(ride.dropoff)}`)),
+      card,
+      el("button", { type: "button", class: "confirm-action", onclick: closePayment }, t("Close"))));
+  document.body.append(backdrop);
+}
+
+// Shown on both phones the moment the fare is paid. onDone runs when it closes.
+function showPaymentReceived(ride, onDone) {
+  closePayment();
+  const old = $("paid-backdrop");
+  if (old) old.remove();
+  const method = ride.payment && ride.payment.method === "cash" ? t("Cash") : t("QR payment (demo)");
+  let done = false;
+  const next = () => { if (done) return; done = true; backdrop.remove(); if (onDone) onDone(); };
+  const backdrop = el("div", { id: "paid-backdrop", class: "confirm-backdrop", onclick: e => { if (e.target === backdrop) next(); } },
+    el("section", { class: "confirm-card", role: "alertdialog", "aria-labelledby": "paid-title" },
+      el("div", { class: "confirm-head" },
+        el("div", { class: "confirm-check", "aria-hidden": "true" }, "✓"),
+        el("h2", { id: "paid-title" }, t("Payment received")),
+        el("p", {}, `${rupees(ride.fare)} · ${method}`)),
+      el("div", { class: "muted confirm-note" }, t("Thank you! Your ride is paid.")),
+      el("button", { type: "button", class: "confirm-done", onclick: next }, t("Continue"))));
+  document.body.append(backdrop);
+  if (navigator.vibrate) navigator.vibrate(150);
+  setTimeout(() => { if (backdrop.isConnected) next(); }, 3000);
 }

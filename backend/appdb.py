@@ -257,8 +257,11 @@ def init_db():
                 if statement.strip():
                     conn.execute(statement)
             for table, column, kind in ADDED_COLUMNS:
-                kind = kind.replace("INTEGER", "BIGINT")
+                # Same types as PG_SCHEMA: a 4-byte REAL would round timestamps to minutes.
+                kind = kind.replace("INTEGER", "BIGINT").replace("REAL", "DOUBLE PRECISION")
                 conn.execute(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {column} {kind}")
+            # paid_at was first added as REAL; widen it where that already happened.
+            conn.execute("ALTER TABLE rides ALTER COLUMN paid_at TYPE DOUBLE PRECISION")
         return
     migrate_users_to_per_role_accounts()
     with connect() as conn:
