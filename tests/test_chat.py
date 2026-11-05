@@ -85,7 +85,12 @@ class WholeOfJkTests(unittest.TestCase):
     def test_villages_and_towns_across_the_state(self):
         for name in ("Kishtwar", "Gulmarg", "Hamirpur"):
             self.assertFinds(name, name)
-        self.assertGreater(len(placesdb._rows), 5000)
+        self.assertGreater(len(placesdb._rows), 15000)
+        # Everyday landmarks a rider gives as a pickup: malls, markets, chowks, petrol pumps.
+        for text, kind in (("Wave Mall", "mall"), ("Bahu Plaza", "marketplace"), ("Paloura Chowk", "road"),
+                           ("Narbal Fuel Filling Station", "fuel")):
+            found = placesdb.search(text)
+            self.assertTrue(found and found[0]["kind"] == kind, (text, found[:1]))
 
     def test_across_the_border_is_not_included_or_served(self):
         self.assertFalse(placesdb.search("Sialkot"))

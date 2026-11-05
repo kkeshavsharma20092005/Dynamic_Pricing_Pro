@@ -44,6 +44,10 @@ CREATE TABLE IF NOT EXISTS users (
     role TEXT NOT NULL CHECK (role IN ('rider', 'driver', 'admin')),
     vehicle TEXT,
     email TEXT,
+    gender TEXT,
+    kyc TEXT,
+    kyc_note TEXT,
+    plate TEXT,
     password_hash TEXT NOT NULL,
     salt TEXT NOT NULL,
     created_at REAL NOT NULL,
@@ -54,6 +58,7 @@ CREATE TABLE IF NOT EXISTS rides (
     rider_id INTEGER NOT NULL REFERENCES users(id),
     driver_id INTEGER REFERENCES users(id),
     sim_driver TEXT,
+    women_only INTEGER NOT NULL DEFAULT 0,
     status TEXT NOT NULL,
     pickup TEXT NOT NULL,
     dropoff TEXT NOT NULL,
@@ -95,6 +100,30 @@ CREATE TABLE IF NOT EXISTS help_requests (
     created_at REAL NOT NULL
 );
 CREATE INDEX IF NOT EXISTS help_ride ON help_requests(ride_id);
+CREATE TABLE IF NOT EXISTS verifications (
+    id INTEGER PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id),
+    kind TEXT NOT NULL,
+    document TEXT NOT NULL,
+    id_image TEXT NOT NULL,
+    selfie TEXT NOT NULL,
+    licence_image TEXT,
+    rc_image TEXT,
+    status TEXT NOT NULL,
+    note TEXT,
+    created_at REAL NOT NULL,
+    reviewed_at REAL
+);
+CREATE INDEX IF NOT EXISTS verifications_status ON verifications(status);
+CREATE TABLE IF NOT EXISTS feedback (
+    id INTEGER PRIMARY KEY,
+    ride_id INTEGER NOT NULL UNIQUE REFERENCES rides(id),
+    rider_id INTEGER NOT NULL REFERENCES users(id),
+    rating INTEGER NOT NULL CHECK (rating BETWEEN 1 AND 5),
+    tags TEXT NOT NULL,
+    comment TEXT NOT NULL,
+    created_at REAL NOT NULL
+);
 CREATE TABLE IF NOT EXISTS settings (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
@@ -203,21 +232,35 @@ def migrate_users_to_per_role_accounts():
         conn.close()
 
 
+# Columns added after the first release. Older databases get them on start.
+ADDED_COLUMNS = [
+    ("users", "email", "TEXT"),
+    ("users", "gender", "TEXT"),
+    ("users", "kyc", "TEXT"),
+    ("users", "kyc_note", "TEXT"),
+    ("users", "plate", "TEXT"),
+    ("verifications", "rc_image", "TEXT"),
+    ("rides", "women_only", "INTEGER NOT NULL DEFAULT 0"),
+]
+
+
 def init_db():
     if USE_POSTGRES:
         with _pg_pool().connection() as conn:
             for statement in PG_SCHEMA.split(";"):
                 if statement.strip():
                     conn.execute(statement)
-            # Databases created before accounts had an email address.
-            conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS email TEXT")
+            for table, column, kind in ADDED_COLUMNS:
+                kind = kind.replace("INTEGER", "BIGINT")
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {column} {kind}")
         return
     migrate_users_to_per_role_accounts()
     with connect() as conn:
         conn.executescript(SCHEMA)
-        columns = {row["name"] for row in conn.execute("PRAGMA table_info(users)").fetchall()}
-        if "email" not in columns:
-            conn.execute("ALTER TABLE users ADD COLUMN email TEXT")
+        for table, column, kind in ADDED_COLUMNS:
+            existing = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()}
+            if column not in existing:
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {kind}")
 
 
 def backend_name() -> str:
@@ -236,6 +279,69 @@ def create_user(phone, name, role, password, vehicle=None, email=None) -> int:
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             (phone, name, role, vehicle, email, hash_password(password, salt), salt, time.time()))
         return cursor.lastrowid
+
+
+def set_gender_once(user_id, gender) -> bool:
+    """Record an account's gender. False if it was already set: it cannot be changed here."""
+    with connect() as conn:
+        return conn.execute("UPDATE users SET gender = ? WHERE id = ? AND gender IS NULL",
+                            (gender, user_id)).rowcount == 1
+
+
+# ID checks. The document images are kept only until an admin has reviewed them.
+def save_verification(user_id, kind, document, id_image, selfie, licence_image, plate=None, rc_image=None):
+    with connect() as conn:
+        conn.execute(
+            "INSERT INTO verifications (user_id, kind, document, id_image, selfie, licence_image, rc_image, "
+            "status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?)",
+            (user_id, kind, document, id_image, selfie, licence_image, rc_image, time.time()))
+        conn.execute("UPDATE users SET kyc = 'pending', kyc_note = NULL, plate = COALESCE(?, plate) WHERE id = ?",
+                     (plate, user_id))
+
+
+def plate_in_use(plate, user_id) -> bool:
+    """Another driver, approved or waiting, already has this number plate."""
+    with connect() as conn:
+        row = conn.execute("SELECT 1 FROM users WHERE plate = ? AND id != ? AND role = 'driver' "
+                           "AND kyc IN ('pending', 'approved')", (plate, user_id)).fetchone()
+    return row is not None
+
+
+def list_verifications(status, limit=50):
+    with connect() as conn:
+        rows = conn.execute(
+            "SELECT v.*, u.name, u.phone, u.role, u.vehicle, u.gender, u.plate FROM verifications v "
+            "JOIN users u ON u.id = v.user_id WHERE v.status = ? ORDER BY v.created_at "
+            + ("ASC" if status == "pending" else "DESC") + " LIMIT ?", (status, limit)).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_verification(verification_id):
+    with connect() as conn:
+        row = conn.execute("SELECT * FROM verifications WHERE id = ?", (verification_id,)).fetchone()
+    return dict(row) if row else None
+
+
+def review_verification(verification_id, approved, gender, note) -> int | None:
+    """Record the decision and delete the images. The user's id, or None if already reviewed."""
+    status = "approved" if approved else "rejected"
+    with connect() as conn:
+        row = conn.execute("SELECT user_id FROM verifications WHERE id = ? AND status = 'pending'",
+                           (verification_id,)).fetchone()
+        if row is None:
+            return None
+        changed = conn.execute(
+            "UPDATE verifications SET status = ?, note = ?, reviewed_at = ?, id_image = '', selfie = '', "
+            "licence_image = NULL, rc_image = NULL WHERE id = ? AND status = 'pending'",
+            (status, note, time.time(), verification_id)).rowcount
+        if not changed:
+            return None
+        if approved:
+            conn.execute("UPDATE users SET kyc = 'approved', kyc_note = NULL, gender = ? WHERE id = ?",
+                         (gender, row["user_id"]))
+        else:
+            conn.execute("UPDATE users SET kyc = 'rejected', kyc_note = ? WHERE id = ?", (note, row["user_id"]))
+        return row["user_id"]
 
 
 def find_user(phone, role):

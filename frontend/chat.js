@@ -210,7 +210,8 @@ function setupChat() {
     log.append(waiting);
     log.scrollTop = log.scrollHeight;
     try {
-      const reply = await api("/chat", { method: "POST", body: { message: text, ...extra } });
+      const reply = await api("/chat", { method: "POST", body: { message: text, ...extra,
+        ...(typeof isWomenMode === "function" && isWomenMode() ? { women_only: true } : {}) } });
       waiting.remove();
       showReply(reply, fromVoice);
       if (reply.need_location) askForLocation(reply);

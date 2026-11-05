@@ -5,6 +5,65 @@ const panel = () => $("panel");
 const VEHICLE_ICON = { bike: "🛵", erickshaw: "🛺", auto: "🛺", cab: "🚕", shared: "🚐" };
 const STEPS = ["searching", "accepted", "arrived", "in_progress", "completed"];
 
+// ---------- Women Raahi: women riders can ride with women drivers only, in a pink theme.
+// The choice is remembered on this device for this account until she turns it off.
+let me = null, womenMode = false;
+const womenKey = () => `raahi_women_raahi_${me.id}`;
+const canUseWomenMode = () => !!me && me.gender === "female";
+const isVerified = () => !!me && me.kyc === "approved";
+const isWomenMode = () => canUseWomenMode() && isVerified() && womenMode;   // chat.js reads this too
+
+// The first time she turns it on, she verifies her ID in a sheet over the dashboard.
+function openWomenKyc() {
+  const close = () => { sheet.remove(); renderBooking(); };
+  const sheet = el("div", { class: "gender-backdrop", onclick: event => { if (event.target === sheet) close(); } },
+    el("section", { class: "gender-sheet kyc-sheet", role: "dialog", "aria-modal": "true", "aria-label": t("Verify your ID for Women Raahi") },
+      el("button", { type: "button", class: "assistant-close kyc-close", "aria-label": t("Close"), onclick: close }, "×"),
+      kycPanel(me, saved => {
+        me = saved;
+        sheet.remove();
+        renderBooking();
+        kycThanks(me);
+      })));
+  document.body.append(sheet);
+  sheet.querySelector("select, button").focus();
+}
+
+function applyWomenMode() {
+  document.body.classList.toggle("women-mode", isWomenMode());
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.content = isWomenMode() ? "#ffe4ee" : "#ffffff";
+}
+
+function womenToggle() {
+  if (!canUseWomenMode()) return null;
+  const on = isWomenMode();
+  const subtitle = on ? "On: your rides go only to women drivers"
+    : me.kyc === "pending" ? "ID check pending. It turns on once approved."
+    : isVerified() ? "Tap to ride only with women drivers" : "Verify your ID once to turn this on";
+  return el("button", {
+    type: "button", id: "women-raahi", class: "women-toggle" + (on ? " on" : ""), "aria-pressed": String(on),
+    onclick: () => {
+      if (!isVerified()) {
+        if (me.kyc === "pending") toast(t("ID check pending. It turns on once approved."));
+        else openWomenKyc();
+        return;
+      }
+      womenMode = !womenMode;
+      localStorage.setItem(womenKey(), womenMode ? "1" : "0");
+      applyWomenMode();
+      toast(t(womenMode ? "Women Raahi is on" : "Women Raahi is off"));
+      renderBooking();
+    },
+  },
+    el("span", { class: "women-icon", "aria-hidden": "true" }, "🌸"),
+    el("span", { class: "women-text" }, el("strong", {}, t("Women Raahi")),
+      el("span", {}, t(subtitle))),
+    el("span", { class: "women-switch", "aria-hidden": "true" }));
+}
+
+const womenBadge = () => el("span", { class: "tag women" }, "🌸 " + t("Women Raahi") + " · " + t("Only women drivers"));
+
 // Pickup: a black dot with a white ring. Drop-off: a black square.
 const DROP_ICON = L.divIcon({ className: "pin-drop", iconSize: [16, 16] });
 function marker(key, point) {
@@ -120,6 +179,7 @@ function renderBooking() {
 
   const photo = dropoff && dropoff.name ? PHOTOS.find(p => p.place === dropoff.name) : null;
   fill(panel(),
+    womenToggle(),
     photo && photoBanner(photo),
     destinationScroller(),
     placeSelect("pickup-select", "Pickup", pickup, setPickup),
@@ -213,9 +273,10 @@ function renderOptions(results, error, animate = false) {
     comparisonCard(current),
     el("div", { class: "muted" }, t("Demo payment: pay the driver directly")),
     el("button", { type: "button", id: "book", onclick: async () => {
+      askToNotify();
       try {
-        showRide(await api("/rides", { method: "POST", body: { pickup, dropoff, vehicle: chosen } }));
-        toast(t("Finding a driver…"));
+        showRide(await api("/rides", { method: "POST", body: { pickup, dropoff, vehicle: chosen, women_only: isWomenMode() } }));
+        toast(t(isWomenMode() ? "Finding a woman driver…" : "Finding a driver…"));
       } catch (e) { error.textContent = e.message; }
     } }, `${t("Book")} · ${rupees(current.fare)}`));
 }
@@ -226,7 +287,8 @@ function historyList() {
     fill(list, rides.length ? rides.slice(0, 10).map(r =>
       el("div", { class: "history-item" },
         el("div", {}, `${r.pickup.name} → ${r.dropoff.name}`),
-        el("div", { class: "muted" }, `${rupees(r.fare)} · ${t(STATUS_TEXT[r.status])} · ${new Date(r.created_at * 1000).toLocaleDateString("en-IN")}`),
+        el("div", { class: "muted" }, `${rupees(r.fare)} · ${t(STATUS_TEXT[r.status])} · ${new Date(r.created_at * 1000).toLocaleDateString("en-IN")}`
+          + (r.feedback ? ` · ${"★".repeat(r.feedback.rating)}` : "")),
         el("button", { type: "button", class: "linkish", onclick: () => {
           setPickup(r.pickup);
           setDropoff(r.dropoff);
@@ -252,7 +314,8 @@ function showRide(next) {
   drawRoute(ride.path);
   marker("pickup", ride.pickup);
   marker("dropoff", ride.dropoff);
-  if (statusChanged) toast(t(STATUS_TEXT[ride.status]));
+  // A driver accepting gets the "Ride confirmed" pop-up instead of a toast.
+  if (statusChanged && ride.status !== "accepted") toast(t(STATUS_TEXT[ride.status]));
 
   const finished = ride.status === "completed" || ride.status === "cancelled";
   if (finished && layers.driver) { layers.driver.remove(); layers.driver = null; }
@@ -262,9 +325,11 @@ function showRide(next) {
   const driver = ride.driver;
   const photo = photoFor(ride.dropoff.name, ride.region);
 
+  const statusText = ride.women_only && ride.status === "searching" ? "Finding a woman driver…" : STATUS_TEXT[ride.status];
   fill(panel(),
     photoBanner(photo, ride.dropoff.name),
-    el("div", { class: "status" + (ride.status === "searching" ? " pulse" : ""), role: "status" }, t(STATUS_TEXT[ride.status])),
+    el("div", { class: "status" + (ride.status === "searching" ? " pulse" : ""), role: "status" }, t(statusText)),
+    ride.women_only && womenBadge(),
     ride.status !== "cancelled" && stepper(ride.status),
     ride.status === "in_progress" && el("div", {},
       el("div", { class: "progress" }, el("div", { id: "trip-bar", class: "progress-bar" })),
@@ -273,7 +338,9 @@ function showRide(next) {
     el("div", { class: "muted" }, `${ride.km} km · ${rupees(ride.fare)} · ${VEHICLE_ICON[ride.vehicle]} ${ride.quote.label}`),
     driver && el("div", { class: "row driver-card" },
       el("div", {}, el("strong", {}, driver.name), " ",
-        driver.simulated && el("span", { class: "tag" }, t("Demo driver"))),
+        driver.simulated && el("span", { class: "tag" }, t("Demo driver")),
+        driver.plate && el("div", { class: "plate-row" }, el("span", { class: "plate", "aria-label": `${t("Vehicle number plate")} ${driver.plate}` }, driver.plate),
+          !finished && el("span", { class: "muted" }, t("Check the number plate before you get in")))),
       !finished && (driver.phone
         ? el("a", { href: `tel:+91${driver.phone}` }, el("button", { type: "button", class: "secondary" }, t("Call")))
         : el("button", { type: "button", class: "secondary", onclick: () => toast(t("Calling is simulated for demo drivers.")) }, t("Call")))),
@@ -286,13 +353,173 @@ function showRide(next) {
       type: "button", class: "danger",
       onclick: () => api(`/rides/${ride.id}/cancel`, { method: "POST" }).then(showRide).catch(e => toast(e.message)),
     }, t("Cancel ride")),
+    ride.status === "completed" && driver && (ride.feedback
+      ? el("div", { class: "rated" }, el("span", { class: "stars-static", "aria-label": `${ride.feedback.rating} / 5` }, "★".repeat(ride.feedback.rating) + "☆".repeat(5 - ride.feedback.rating)),
+          el("span", { class: "muted" }, t("Thanks for rating this trip")))
+      : el("button", { type: "button", class: "secondary", onclick: () => showFeedback(ride) }, "★ " + t("Rate this trip"))),
     finished && el("button", { type: "button", onclick: resetBooking }, t("Book another ride")),
   );
+  // Asked once, right when the trip ends. Skipping is fine: the button above stays.
+  if (statusChanged && ride.status === "completed" && driver && !ride.feedback) setTimeout(() => showFeedback(ride), 600);
   if (driver && !finished && !existingChat) addMessage = renderChat(chatArea, ride, "rider");
   updateRideHelp(ride, "rider");
 }
 
+// ---------- "Ride confirmed" pop-up, shown once when a driver accepts
+const initials = name => name.split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0].toUpperCase()).join("");
+
+function closeConfirmed() {
+  const open = $("confirm-backdrop");
+  if (open) open.remove();
+}
+
+function showConfirmed(r) {
+  const driver = r.driver;
+  if (!driver) return;
+  closeConfirmed();
+  const eta = driver.to_pickup;
+  const close = () => { backdrop.remove(); removeEventListener("keydown", onKey); };
+  const onKey = e => { if (e.key === "Escape") close(); };
+  const callButton = driver.phone
+    ? el("a", { class: "confirm-action", href: `tel:+91${driver.phone}` }, el("span", { "aria-hidden": "true" }, "📞"), t("Call driver"))
+    : el("button", { type: "button", class: "confirm-action", onclick: () => toast(t("Calling is simulated for demo drivers.")) },
+        el("span", { "aria-hidden": "true" }, "📞"), t("Call driver"));
+  const gotIt = el("button", { type: "button", class: "confirm-done", onclick: close }, t("Got it"));
+
+  const backdrop = el("div", { id: "confirm-backdrop", class: "confirm-backdrop", onclick: e => { if (e.target === backdrop) close(); } },
+    el("section", { class: "confirm-card", role: "dialog", "aria-modal": "true", "aria-labelledby": "confirm-title", "aria-describedby": "confirm-sub" },
+      el("div", { class: "confirm-head" },
+        el("div", { class: "confirm-check", "aria-hidden": "true" }, "✓"),
+        el("h2", { id: "confirm-title" }, t("Your ride is confirmed")),
+        el("p", { id: "confirm-sub" }, `${driver.name} ${t("accepted your ride and is on the way.")}`)),
+
+      el("div", { class: "confirm-driver" },
+        el("div", { class: "confirm-avatar", "aria-hidden": "true" }, initials(driver.name)),
+        el("div", { class: "confirm-who" },
+          el("strong", {}, driver.name),
+          el("div", { class: "muted" }, `${VEHICLE_ICON[r.vehicle]} ${t(driver.vehicle)}`),
+          driver.plate && el("span", { class: "plate confirm-plate", "aria-label": `${t("Vehicle number plate")} ${driver.plate}` }, driver.plate),
+          driver.simulated && el("span", { class: "tag" }, t("Demo driver"))),
+        eta && el("div", { class: "confirm-eta" },
+          el("strong", {}, formatMinutes(eta.minutes)),
+          el("span", {}, `${eta.km} km ${t("away")}`))),
+
+      el("ol", { class: "confirm-trip", "aria-label": t("Trip") },
+        el("li", { class: "from" }, el("span", { class: "muted" }, t("Pickup")), el("strong", {}, placeLabel(r.pickup))),
+        el("li", { class: "to" }, el("span", { class: "muted" }, t("Drop-off")), el("strong", {}, placeLabel(r.dropoff)))),
+
+      el("dl", { class: "confirm-facts" },
+        el("div", {}, el("dt", {}, t("Fare")), el("dd", {}, rupees(r.fare))),
+        el("div", {}, el("dt", {}, t("Distance")), el("dd", {}, `${r.km} km`)),
+        el("div", {}, el("dt", {}, t("Ride")), el("dd", {}, `#${r.id}`))),
+      el("div", { class: "muted confirm-note" }, t("Demo payment: pay the driver directly")),
+
+      el("div", { class: "confirm-actions" },
+        callButton,
+        el("button", { type: "button", class: "confirm-action", onclick: () => {
+          close();
+          const input = document.querySelector("#chat-area input");
+          if (input) input.focus();
+        } }, el("span", { "aria-hidden": "true" }, "💬"), t("Message"))),
+      gotIt));
+
+  document.body.append(backdrop);
+  addEventListener("keydown", onKey);
+  gotIt.focus();
+  if (navigator.vibrate) navigator.vibrate([120, 60, 120]);
+  notifyInBackground(t("Your ride is confirmed"), `${driver.name} · ${t(driver.vehicle)}${eta ? ` · ${formatMinutes(eta.minutes)}` : ""}`);
+}
+
+// ---------- optional feedback after a completed trip
+const RATING_WORDS = ["", "Terrible", "Bad", "Okay", "Good", "Excellent"];
+const GOOD_TAGS = [["safe", "Safe driving"], ["polite", "Polite driver"], ["clean", "Clean vehicle"], ["on_time", "On time"], ["route", "Good route"]];
+const BAD_TAGS = [["late", "Driver was late"], ["rash", "Rash driving"], ["rude", "Rude behaviour"], ["dirty", "Vehicle not clean"], ["fare", "Fare issue"], ["route", "Wrong route or stop"]];
+
+function showFeedback(r) {
+  if (!r.driver || r.feedback || $("feedback-backdrop")) return;
+  closeConfirmed();
+  let rating = 0;
+  const tags = new Set();
+  const close = () => { backdrop.remove(); removeEventListener("keydown", onKey); };
+  const onKey = e => { if (e.key === "Escape") close(); };
+
+  const word = el("div", { class: "rating-word", "aria-live": "polite" }, t("Tap a star to rate"));
+  const tagBox = el("div", { class: "help-topics feedback-tags" });
+  const comment = el("textarea", { rows: 2, maxLength: 500, placeholder: t("Tell us more (optional)"), "aria-label": t("Tell us more (optional)") });
+  const error = el("div", { class: "error", role: "alert" });
+  const submit = el("button", { type: "button", class: "confirm-done", disabled: true, onclick: send }, t("Submit feedback"));
+  const stars = [1, 2, 3, 4, 5].map(n => el("button", {
+    type: "button", class: "star", role: "radio", "aria-checked": "false", "aria-label": `${n} ${t("of 5 stars")}`,
+    onclick: () => choose(n),
+  }, "★"));
+
+  function choose(n) {
+    const goodBefore = rating >= 4;
+    rating = n;
+    stars.forEach((s, i) => { s.classList.toggle("on", i < n); s.setAttribute("aria-checked", String(i + 1 === n)); });
+    word.textContent = t(RATING_WORDS[n]);
+    if (goodBefore !== (n >= 4) || !tagBox.childElementCount) tags.clear();
+    fill(tagBox, (n >= 4 ? GOOD_TAGS : BAD_TAGS).map(([key, label]) => el("button", {
+      type: "button", class: "chip" + (tags.has(key) ? " on" : ""), "aria-pressed": String(tags.has(key)),
+      onclick: e => {
+        tags.has(key) ? tags.delete(key) : tags.add(key);
+        e.currentTarget.classList.toggle("on", tags.has(key));
+        e.currentTarget.setAttribute("aria-pressed", String(tags.has(key)));
+      },
+    }, t(label))));
+    submit.disabled = false;
+  }
+
+  async function send() {
+    submit.disabled = true;
+    error.textContent = "";
+    try {
+      const result = await api(`/rides/${r.id}/feedback`, { method: "POST", body: { rating, tags: [...tags], comment: comment.value } });
+      fill(card, el("div", { class: "confirm-head" },
+        el("div", { class: "confirm-check", "aria-hidden": "true" }, "✓"),
+        el("h2", {}, t("Thank you for your feedback!")),
+        el("p", {}, t("It helps us keep Raahi rides safe and comfortable."))));
+      if (ride && ride.id === r.id) showRide({ ...ride, feedback: result.feedback });
+      setTimeout(close, 1800);
+    } catch (e) { error.textContent = e.message; submit.disabled = false; }
+  }
+
+  const card = el("section", { class: "confirm-card", role: "dialog", "aria-modal": "true", "aria-labelledby": "feedback-title" },
+    el("div", { class: "confirm-head" },
+      el("div", { class: "confirm-avatar feedback-avatar", "aria-hidden": "true" }, initials(r.driver.name)),
+      el("h2", { id: "feedback-title" }, `${t("How was your ride with")} ${r.driver.name}?`),
+      el("p", {}, `${placeLabel(r.pickup)} → ${placeLabel(r.dropoff)} · ${rupees(r.fare)}`)),
+    el("div", { class: "stars", role: "radiogroup", "aria-label": t("Your rating") }, stars),
+    word, tagBox, comment, error,
+    el("div", { class: "confirm-actions" },
+      el("button", { type: "button", class: "confirm-action", onclick: close }, t("Skip")),
+      submit),
+    el("div", { class: "muted confirm-note" }, t("Feedback is optional.")));
+  const backdrop = el("div", { id: "feedback-backdrop", class: "confirm-backdrop", onclick: e => { if (e.target === backdrop) close(); } }, card);
+  document.body.append(backdrop);
+  addEventListener("keydown", onKey);
+  stars[4].focus();
+}
+
+// When the tab is in the background, a system notification says the same thing.
+function notifyInBackground(title, body) {
+  if (!document.hidden || !("Notification" in window) || Notification.permission !== "granted") return;
+  const options = { body, icon: "/static/icons/icon-192.png", tag: "raahi-ride" };
+  if (navigator.serviceWorker) {
+    navigator.serviceWorker.ready.then(reg => reg.showNotification(title, options)).catch(() => {});
+  } else {
+    try { new Notification(title, options); } catch { /* not supported on this browser */ }
+  }
+}
+
+function askToNotify() {
+  if ("Notification" in window && Notification.permission === "default") Notification.requestPermission().catch(() => {});
+}
+
 function resetBooking() {
+  closeConfirmed();
+  const asking = $("feedback-backdrop");
+  if (asking) asking.remove();
   goScreen("book", { replace: true });
   ride = quote = dropoff = pickup = addMessage = null;
   updateRideHelp(null);
@@ -319,6 +546,16 @@ function onLive(event) {
     api("/rides/active").then(active => { if (active) showRide(active); }).catch(() => {});
   } else if (event.type === "ride") {
     if (!ride || ride.id === event.ride.id) showRide(event.ride);
+    if (["cancelled", "completed"].includes(event.ride.status)) closeConfirmed();
+  } else if (event.type === "kyc") {
+    me = event.user;
+    // Approval turns Women Raahi on: that is what she was verifying for.
+    if (me.kyc === "approved") { womenMode = true; localStorage.setItem(womenKey(), "1"); }
+    applyWomenMode();
+    toast(t(me.kyc === "approved" ? "You are verified. Women Raahi is ready." : "Your ID check was not approved."));
+    if (!ride) renderBooking();
+  } else if (event.type === "confirmed") {
+    if (!ride || ride.id === event.ride.id) { showRide(event.ride); showConfirmed(event.ride); }
   } else if (event.type === "position" && ride && ride.id === event.ride_id) {
     moveDriver(event);
   } else if (event.type === "message" && ride && ride.id === event.message.ride_id && addMessage) {
@@ -343,7 +580,10 @@ function goBack(state) {
   }
 }
 
-async function start() {
+async function start(user) {
+  me = await askGender(user);
+  womenMode = localStorage.getItem(womenKey()) === "1";
+  applyWomenMode();
   hideAuth();
   goScreen("book", { replace: true });
   onBack(goBack);
@@ -364,7 +604,8 @@ async function start() {
   useAccount("rider");
   setupShell("Raahi");
   await loadPhotos();
-  if (await signedInUser("rider")) return start();
+  const signedIn = await signedInUser("rider");
+  if (signedIn) return start(signedIn);
   fill($("auth-form"));
   showAuthPhoto("bahu-fort");
   renderAuth($("auth-form"), "rider", start);

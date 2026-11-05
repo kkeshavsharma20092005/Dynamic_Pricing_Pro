@@ -1,8 +1,9 @@
 """
 The ride app: accounts, quotes, booking, dispatch, live tracking, chat and admin.
 
-Dispatch tries real online drivers first, nearest first. If none accepts, a simulated
-driver takes the ride, so a demo always completes. Simulated trips run at demo speed
+Dispatch offers the ride to every real online driver first, nearest first, one at a time.
+Only when no real driver is online, or every one of them declined or let the offer run out,
+does a simulated driver take the ride, so a demo always completes. Simulated trips run at demo speed
 (under a minute) whatever the distance. Everything is marked so the UI can say which
 parts are simulated.
 """
@@ -38,10 +39,22 @@ IST = timezone(timedelta(hours=5, minutes=30))
 DEFAULT_CAPS = {"normal": 1.3, "hardship": 1.15}
 FRONTEND_PHOTOS = OUTPUT_DIR.parent / "frontend" / "photos"
 MIN_TRIP_KM = 0.3
-OFFER_SECONDS = 15
+# A real driver sees a ride request for up to a minute. The rider never waits longer than
+# that for real drivers in total: when the minute is up, the simulated driver takes the ride.
+OFFER_SECONDS = int(os.environ.get("OFFER_SECONDS", "60"))
+REAL_SEARCH_SECONDS = int(os.environ.get("REAL_SEARCH_SECONDS", "60"))
+# With no real driver free, how long to wait (for one to come online) before the
+# simulated driver takes the ride. Each real driver's offer restarts this wait.
+NO_DRIVER_WAIT_SECONDS = float(os.environ.get("NO_DRIVER_WAIT_SECONDS", "2"))
 REAL_DRIVER_RADIUS_KM = 30.0
+ROAD_FACTOR = 1.3          # roads are longer than the straight line between two points
+CITY_KMPH = 22             # typical in-town speed, for the driver's time to the pickup
 SIM_NAMES = ["Rakesh Sharma", "Mohd Yousuf", "Bilal Ahmad", "Sunil Kumar", "Imran Lone",
              "Vikram Singh", "Tariq Mir", "Ajay Gupta", "Farooq Dar", "Ramesh Thakur"]
+# Women Raahi rides go only to women drivers, simulated ones included.
+SIM_WOMEN_NAMES = ["Priya Sharma", "Shazia Bhat", "Anjali Gupta", "Rubina Akhtar", "Neha Raina",
+                   "Saima Mir", "Pooja Thakur", "Nusrat Jan"]
+GENDERS = ("female", "male", "other", "unspecified")
 SIM_REPLIES = ["Ji, main aa raha hoon.", "2-3 minute mein pahunch raha hoon.",
                "Theek hai, pickup point par rukiye.", "Okay, noted."]
 ACTIVE = ("searching", "accepted", "arrived", "in_progress")
@@ -149,7 +162,15 @@ def require_admin(user: dict = Depends(current_user)) -> dict:
 
 
 def public_user(user: dict) -> dict:
-    return {k: user.get(k) for k in ("id", "phone", "name", "role", "vehicle", "email")}
+    view = {k: user.get(k) for k in ("id", "phone", "name", "role", "vehicle", "email", "gender", "kyc", "kyc_note")}
+    view["plate"] = show_plate(user.get("plate"))
+    return view
+
+
+def show_plate(plate):
+    """JK02AB1234 -> JK02 AB 1234, the way it is painted on the plate."""
+    match = re.fullmatch(r"([A-Z]{2}\d{1,2})([A-Z]{0,3})(\d{4})", plate or "")
+    return " ".join(part for part in match.groups() if part) if match else plate
 
 
 @router.post("/register")
@@ -184,6 +205,25 @@ def login(body: LoginBody):
 @router.get("/me")
 def me(user: dict = Depends(current_user)):
     return public_user(user)
+
+
+class GenderBody(BaseModel):
+    gender: str
+
+
+@router.post("/me/gender")
+def set_gender(body: GenderBody, user: dict = Depends(current_user)):
+    """
+    Asked once, after the first login. Only women drivers get Women Raahi rides, so it
+    cannot be switched here afterwards: a change goes through Raahi support.
+    """
+    if user["role"] == "admin":
+        raise HTTPException(403, "Admin accounts have no gender setting.")
+    if body.gender not in GENDERS:
+        raise HTTPException(422, "Choose one of the options.")
+    if not appdb.set_gender_once(user["id"], body.gender):
+        raise HTTPException(409, "Your gender is already saved. Contact Raahi support to change it.")
+    return public_user(appdb.get_user(user["id"]))
 
 
 # The answer is the same whether or not the number has an account, so this cannot be used
@@ -323,6 +363,16 @@ def nearby(lat: float, lon: float, user: dict = Depends(current_user)):
 # ------------------------------------------------------------------ rides
 class BookBody(QuoteBody):
     vehicle: str
+    women_only: bool = False
+
+
+def check_women_only(user: dict, women_only: bool):
+    if not women_only:
+        return
+    if user.get("gender") != "female":
+        raise HTTPException(403, "Women Raahi rides are for women riders.")
+    if user.get("kyc") != "approved":
+        raise HTTPException(403, "Verify your ID once to use Women Raahi.")
 
 
 def row_to_ride(row) -> dict:
@@ -330,6 +380,7 @@ def row_to_ride(row) -> dict:
     for key in ("pickup", "dropoff", "quote", "path"):
         ride[key] = json.loads(ride[key])
     ride["sim_driver"] = json.loads(ride["sim_driver"]) if ride["sim_driver"] else None
+    ride["women_only"] = bool(ride.get("women_only"))
     return ride
 
 
@@ -346,18 +397,32 @@ def ride_view(ride: dict, viewer: dict) -> dict:
         # The commission and cost split is business data, for the admin only.
         view["quote"] = {k: v for k, v in ride["quote"].items() if k != "business"}
     live = ride["status"] in ("accepted", "arrived", "in_progress")
+    vehicle = VEHICLES[ride["vehicle"]]["label"]
     if ride["sim_driver"]:
-        view["driver"] = {"name": ride["sim_driver"]["name"], "simulated": True, "phone": None}
+        view["driver"] = {"name": ride["sim_driver"]["name"], "simulated": True, "phone": None,
+                          "plate": ride["sim_driver"].get("plate"), "vehicle": vehicle,
+                          "to_pickup": to_pickup(ride, ride["sim_driver"]["start"])}
     elif ride["driver_id"]:
         driver = appdb.get_user(ride["driver_id"])
-        view["driver"] = {"name": driver["name"], "simulated": False,
-                          "phone": driver["phone"] if live else None}
+        online = hub.drivers.get(ride["driver_id"])
+        view["driver"] = {"name": driver["name"], "simulated": False, "plate": show_plate(driver.get("plate")),
+                          "phone": driver["phone"] if live else None, "vehicle": vehicle,
+                          "to_pickup": to_pickup(ride, (online["lat"], online["lon"])) if online else None}
     else:
         view["driver"] = None
+    if ride["status"] != "accepted" and view["driver"]:
+        view["driver"]["to_pickup"] = None     # only meaningful while the driver is on the way
+    view["feedback"] = feedback_for(ride["id"]) if ride["status"] == "completed" else None
     if viewer["role"] == "driver" or viewer["role"] == "admin":
         rider = appdb.get_user(ride["rider_id"])
         view["rider"] = {"name": rider["name"], "phone": rider["phone"] if live else None}
     return view
+
+
+def to_pickup(ride: dict, start) -> dict:
+    """Roughly how far the driver is from the pickup, by road, and how long that takes."""
+    km = round(distance_km(start[0], start[1], ride["pickup"]["lat"], ride["pickup"]["lon"]) * ROAD_FACTOR, 1)
+    return {"km": km, "minutes": max(1, round(km / CITY_KMPH * 60))}
 
 
 def set_status(ride_id: int, status: str, expected: tuple, **fields) -> dict | None:
@@ -379,6 +444,12 @@ async def broadcast_ride(ride: dict):
         await hub.send(user_id, {"type": "ride", "ride": ride_view(ride, viewer)})
 
 
+async def announce_driver(ride: dict):
+    """Tell the rider, once, that a driver has taken their ride: the app shows a pop-up."""
+    rider = appdb.get_user(ride["rider_id"])
+    await hub.send(rider["id"], {"type": "confirmed", "ride": ride_view(ride, rider)})
+
+
 def active_ride_for(user: dict) -> dict | None:
     column = "driver_id" if user["role"] == "driver" else "rider_id"
     with appdb.connect() as conn:
@@ -394,25 +465,26 @@ async def book(body: BookBody, user: dict = Depends(current_user)):
         raise HTTPException(403, "Only rider accounts can book.")
     if active_ride_for(user):
         raise HTTPException(409, "You already have an active ride.")
+    check_women_only(user, body.women_only)
 
     # Re-priced here: a client-supplied fare must never be trusted.
     quoted = build_quote(body)
     option = next((o for o in quoted["options"] if o["vehicle"] == body.vehicle), None)
     if option is None:
         raise HTTPException(422, "That vehicle is not available for this trip.")
-    ride = await create_ride(user, quoted, option)
+    ride = await create_ride(user, quoted, option, body.women_only)
     return ride_view(ride, user)
 
 
-async def create_ride(user: dict, quoted: dict, option: dict) -> dict:
+async def create_ride(user: dict, quoted: dict, option: dict, women_only: bool = False) -> dict:
     now = time.time()
     # Saved with the ride, so later edits to the assumptions never rewrite its economics.
     option = {**option, "business": business_assumptions()}
     with appdb.connect() as conn:
         ride_id = conn.execute(
-            "INSERT INTO rides (rider_id, status, pickup, dropoff, vehicle, region, km, minutes, "
-            "fare, quote, path, created_at, updated_at) VALUES (?, 'searching', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (user["id"], json.dumps(quoted["pickup"]), json.dumps(quoted["dropoff"]), option["vehicle"],
+            "INSERT INTO rides (rider_id, women_only, status, pickup, dropoff, vehicle, region, km, minutes, "
+            "fare, quote, path, created_at, updated_at) VALUES (?, ?, 'searching', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (user["id"], int(women_only), json.dumps(quoted["pickup"]), json.dumps(quoted["dropoff"]), option["vehicle"],
              quoted["region"], quoted["km"], quoted["minutes"], option["fare"], json.dumps(option),
              json.dumps(quoted["path"]), now, now)).lastrowid
 
@@ -462,32 +534,60 @@ def release_driver(driver_id):
 
 
 # ------------------------------------------------------------------ dispatch
-async def dispatch(ride_id: int):
-    ride = get_ride(ride_id)
-    candidates = sorted(
-        (d for d in hub.drivers.values()
-         if not d["busy"] and d["vehicle"] == ride["vehicle"]
-         and distance_km(ride["pickup"]["lat"], ride["pickup"]["lon"], d["lat"], d["lon"]) <= REAL_DRIVER_RADIUS_KM),
-        key=lambda d: distance_km(ride["pickup"]["lat"], ride["pickup"]["lon"], d["lat"], d["lon"]))
+def next_candidate(ride: dict, tried: set) -> dict | None:
+    """The nearest free online driver who can take this ride and hasn't seen it yet."""
+    pickup = ride["pickup"]
+    holding_offer = {o["driver"] for o in hub.offers.values()}   # one offer at a time per driver
+    near = [d for d in hub.drivers.values()
+            if not d["busy"] and d["vehicle"] == ride["vehicle"]
+            and (not ride["women_only"] or d["gender"] == "female")    # Women Raahi: women drivers only
+            and d["id"] not in tried and d["id"] not in holding_offer
+            and distance_km(pickup["lat"], pickup["lon"], d["lat"], d["lon"]) <= REAL_DRIVER_RADIUS_KM]
+    return min(near, key=lambda d: distance_km(pickup["lat"], pickup["lon"], d["lat"], d["lon"]), default=None)
 
-    for driver in candidates:
-        if driver["busy"] or driver["id"] not in hub.drivers:
-            continue
-        event = asyncio.Event()
-        hub.offers[ride_id] = {"event": event, "driver": driver["id"]}
-        await hub.send(driver["id"], {"type": "offer", "ride": ride_view(ride, appdb.get_user(driver["id"])),
-                                      "seconds": OFFER_SECONDS})
-        try:
-            await asyncio.wait_for(event.wait(), OFFER_SECONDS)
-        except asyncio.TimeoutError:
-            await hub.send(driver["id"], {"type": "offer_gone", "ride_id": ride_id})
+
+async def offer_to(ride: dict, driver: dict, seconds: float) -> None:
+    """Show the ride to one driver and wait until they answer or the offer runs out."""
+    ride_id = ride["id"]
+    event = asyncio.Event()
+    hub.offers[ride_id] = {"event": event, "driver": driver["id"]}
+    await hub.send(driver["id"], {"type": "offer", "ride": ride_view(ride, appdb.get_user(driver["id"])),
+                                  "to_pickup": to_pickup(ride, (driver["lat"], driver["lon"])),
+                                  "seconds": round(seconds)})
+    try:
+        await asyncio.wait_for(event.wait(), seconds)
+    except asyncio.TimeoutError:
+        await hub.send(driver["id"], {"type": "offer_gone", "ride_id": ride_id})
+    finally:
         hub.offers.pop(ride_id, None)
-        current = get_ride(ride_id)
-        if current["status"] != "searching":
-            return    # accepted by a real driver, or cancelled
 
-    await asyncio.sleep(2)
-    await run_simulated_trip(ride_id)
+
+async def dispatch(ride_id: int):
+    # Real drivers always come first: the simulated driver is used only once no free, online
+    # driver with the right vehicle is left to ask. Drivers are looked up again before each
+    # offer, so one who goes online (or finishes a trip) meanwhile is asked too.
+    tried = set()
+    deadline = time.monotonic() + NO_DRIVER_WAIT_SECONDS
+    search_ends = time.monotonic() + REAL_SEARCH_SECONDS
+    while time.monotonic() < min(deadline, search_ends):
+        ride = get_ride(ride_id)
+        if ride is None or ride["status"] != "searching":
+            return    # accepted by a real driver, or cancelled
+        driver = next_candidate(ride, tried)
+        if driver is None:
+            await asyncio.sleep(0.25)
+            continue
+        tried.add(driver["id"])
+        # A driver asked late in the minute gets only what is left of it.
+        left = search_ends - time.monotonic()
+        if left < 1:
+            break
+        await offer_to(ride, driver, min(OFFER_SECONDS, left))
+        deadline = time.monotonic() + NO_DRIVER_WAIT_SECONDS
+
+    ride = get_ride(ride_id)
+    if ride and ride["status"] == "searching":
+        await run_simulated_trip(ride_id)
 
 
 def point_along(path: list, fraction: float) -> tuple:
@@ -518,12 +618,17 @@ async def run_simulated_trip(ride_id: int):
     rng = random.Random(ride_id)
     pickup = (ride["pickup"]["lat"], ride["pickup"]["lon"])
     start = (pickup[0] + rng.uniform(-.015, .015), pickup[1] + rng.uniform(-.015, .015))
-    sim_driver = {"name": rng.choice(SIM_NAMES), "start": start}
+    # A J&K-style plate, so the demo ride card looks like a real one.
+    plate = (f"{rng.choice(['JK01', 'JK02', 'JK21'])} {rng.choice('ABCDEFGHJKLMNPRSTUVWXYZ')}"
+             f"{rng.choice('ABCDEFGHJKLMNPRSTUVWXYZ')} {rng.randint(1000, 9999)}")
+    sim_driver = {"name": rng.choice(SIM_WOMEN_NAMES if ride["women_only"] else SIM_NAMES), "start": start,
+                  "plate": plate}
 
     ride = set_status(ride_id, "accepted", ("searching",), sim_driver=json.dumps(sim_driver))
     if ride is None:
         return
     await broadcast_ride(ride)
+    await announce_driver(ride)
     if not await drive(ride, [start, pickup], 10, "accepted"):
         return
 
@@ -564,12 +669,15 @@ async def driver_state(body: DriverState, user: dict = Depends(require_driver)):
     if not body.online:
         hub.drivers.pop(user["id"], None)
         return {"online": False}
+    if user.get("kyc") != "approved":
+        # Every driver's ID and licence are checked before their first ride.
+        raise HTTPException(403, "Your documents must be approved before you can go online.")
     if body.lat is None or body.lon is None:
         raise HTTPException(422, "Location is needed to go online.")
     if not in_service_area(body.lat, body.lon):
         raise HTTPException(422, "You are outside the Jammu & Kashmir service area.")
     ride = active_ride_for(user)
-    hub.drivers[user["id"]] = {"id": user["id"], "vehicle": user["vehicle"], "lat": body.lat,
+    hub.drivers[user["id"]] = {"id": user["id"], "vehicle": user["vehicle"], "gender": user.get("gender"), "lat": body.lat,
                                "lon": body.lon, "busy": ride is not None}
     if ride:
         await hub.to_ride(ride, {"type": "position", "ride_id": ride["id"], "lat": body.lat, "lon": body.lon})
@@ -585,6 +693,10 @@ def offer_for(ride_id: int, user: dict) -> dict:
 
 @router.post("/rides/{ride_id}/accept")
 async def accept(ride_id: int, user: dict = Depends(require_driver)):
+    # Offers only reach approved drivers, who are the only ones allowed online. This is a
+    # second lock, so no path lets an unchecked driver take a rider.
+    if user.get("kyc") != "approved":
+        raise HTTPException(403, "Your documents must be approved before you can accept rides.")
     offer = offer_for(ride_id, user)
     ride = set_status(ride_id, "accepted", ("searching",), driver_id=user["id"])
     if ride is None:
@@ -593,6 +705,7 @@ async def accept(ride_id: int, user: dict = Depends(require_driver)):
         hub.drivers[user["id"]]["busy"] = True
     offer["event"].set()
     await broadcast_ride(ride)
+    await announce_driver(ride)
     return ride_view(ride, user)
 
 
@@ -617,6 +730,49 @@ async def advance(ride_id: int, status: str, user: dict = Depends(require_driver
         release_driver(user["id"])
     await broadcast_ride(updated)
     return ride_view(updated, user)
+
+
+# ------------------------------------------------------------------ feedback
+FEEDBACK_TAGS = {
+    "safe": "Safe driving", "polite": "Polite driver", "clean": "Clean vehicle", "on_time": "On time",
+    "route": "Good route", "late": "Driver was late", "rash": "Rash driving", "rude": "Rude behaviour",
+    "dirty": "Vehicle not clean", "fare": "Fare issue",
+}
+
+
+class FeedbackBody(BaseModel):
+    rating: int = Field(..., ge=1, le=5)
+    tags: list[str] = Field(default_factory=list, max_length=len(FEEDBACK_TAGS))
+    comment: str = Field("", max_length=500)
+
+
+def feedback_for(ride_id: int) -> dict | None:
+    with appdb.connect() as conn:
+        row = conn.execute("SELECT rating, tags, comment, created_at FROM feedback WHERE ride_id = ?",
+                           (ride_id,)).fetchone()
+    return {**dict(row), "tags": json.loads(row["tags"])} if row else None
+
+
+@router.post("/rides/{ride_id}/feedback")
+def give_feedback(ride_id: int, body: FeedbackBody, user: dict = Depends(current_user)):
+    """The rider rates a finished trip, once. Feedback is optional: skipping sends nothing."""
+    ride = ride_for_participant(ride_id, user)
+    if user["id"] != ride["rider_id"]:
+        raise HTTPException(403, "Only the rider can rate this trip.")
+    if ride["status"] != "completed":
+        raise HTTPException(409, "You can rate a trip once it is completed.")
+    unknown = [t for t in body.tags if t not in FEEDBACK_TAGS]
+    if unknown:
+        raise HTTPException(422, "Unknown feedback option.")
+    tags = list(dict.fromkeys(body.tags))
+    try:
+        with appdb.connect() as conn:
+            conn.execute("INSERT INTO feedback (ride_id, rider_id, rating, tags, comment, created_at) "
+                         "VALUES (?, ?, ?, ?, ?, ?)",
+                         (ride_id, user["id"], body.rating, json.dumps(tags), body.comment.strip(), time.time()))
+    except appdb.IntegrityError:
+        raise HTTPException(409, "You have already rated this trip.")
+    return {"message": "Thank you for your feedback!", "feedback": feedback_for(ride_id)}
 
 
 # ------------------------------------------------------------------ chat
@@ -772,6 +928,7 @@ class ChatBody(BaseModel):
     message: str = Field("", max_length=500)
     location: Point | None = None     # the rider's position, when the app was asked for it
     target: str = "pickup"
+    women_only: bool = False          # the app is in Women Raahi mode
 
 
 def chat_point(name: str) -> dict:
@@ -1001,7 +1158,8 @@ async def chat_reply(body: ChatBody, user: dict) -> dict:
         option = next((o for o in quoted["options"] if o["vehicle"] == chat["vehicle"]), None)
         if option is None:
             return {"text": chatbot.say(lang, "not_offered", vehicle=chatbot.VEHICLE_NAMES[lang][chat["vehicle"]])}
-        created = await create_ride(user, quoted, option)
+        check_women_only(user, body.women_only)
+        created = await create_ride(user, quoted, option, body.women_only)
         text = chatbot.say(lang, "booked", fare=created["fare"], pickup=chat["pickup"]["name"], dropoff=chat["dropoff"]["name"])
         chat.update(pickup=None, dropoff=None, vehicle=None, asking=None)
         return {"text": text, "ride": ride_view(created, user)}
@@ -1145,7 +1303,9 @@ def admin_overview(admin: dict = Depends(require_admin)):
             "WHERE status = 'completed' GROUP BY region").fetchall()]
         recent = [row_to_ride(r) for r in conn.execute(
             "SELECT * FROM rides ORDER BY id DESC LIMIT 25").fetchall()]
+        ratings = dict(conn.execute("SELECT COUNT(*) AS n, AVG(rating) AS average FROM feedback").fetchone())
     return {
+        "ratings": {"count": ratings["n"], "average": round(float(ratings["average"]), 2) if ratings["n"] else None},
         **totals, "users": users, "by_region": by_region,
         "drivers_online": len(hub.drivers),
         "rides_capped": sum(1 for r in recent if r["quote"]["fair_capped"]),

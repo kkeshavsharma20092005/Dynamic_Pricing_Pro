@@ -51,6 +51,19 @@ const STRINGS = {
     "Connecting to Raahi…": "राही से जुड़ रहे हैं…",
     "The server is waking up. You stay signed in.": "सर्वर चालू हो रहा है। आप साइन इन रहेंगे।",
     "Your ride is in progress": "आपकी राइड जारी है",
+    "Your ride is confirmed": "आपकी राइड पक्की हो गई", "accepted your ride and is on the way.": "ने आपकी राइड स्वीकार की है और आ रहे हैं।",
+    "Call driver": "ड्राइवर को कॉल करें", "Got it": "ठीक है", "away": "दूर", "Trip": "यात्रा",
+    "Fare": "किराया", "Distance": "दूरी", "Ride": "राइड",
+    "How was your ride with": "आपकी राइड कैसी रही,", "Tap a star to rate": "रेटिंग देने के लिए स्टार दबाएं",
+    "Terrible": "बहुत खराब", "Bad": "खराब", "Okay": "ठीक-ठाक", "Good": "अच्छी", "Excellent": "बहुत बढ़िया",
+    "of 5 stars": "/ 5 स्टार", "Your rating": "आपकी रेटिंग", "Tell us more (optional)": "और बताएं (वैकल्पिक)",
+    "Submit feedback": "फ़ीडबैक भेजें", "Skip": "छोड़ें", "Feedback is optional.": "फ़ीडबैक देना ज़रूरी नहीं है।",
+    "Thank you for your feedback!": "आपके फ़ीडबैक के लिए धन्यवाद!", "It helps us keep Raahi rides safe and comfortable.": "इससे हम राही की राइड सुरक्षित और आरामदायक रखते हैं।",
+    "Rate this trip": "इस यात्रा को रेटिंग दें", "Thanks for rating this trip": "रेटिंग देने के लिए धन्यवाद",
+    "Safe driving": "सुरक्षित ड्राइविंग", "Polite driver": "विनम्र ड्राइवर", "Clean vehicle": "साफ़ गाड़ी", "On time": "समय पर",
+    "Good route": "अच्छा रास्ता", "Driver was late": "ड्राइवर देर से आया", "Rash driving": "लापरवाह ड्राइविंग",
+    "Rude behaviour": "बुरा व्यवहार", "Vehicle not clean": "गाड़ी साफ़ नहीं थी", "Fare issue": "किराये की समस्या",
+    "Bike": "बाइक", "E-rickshaw": "ई-रिक्शा", "Auto": "ऑटो", "Cab": "कैब", "Shared cab (per seat)": "शेयर्ड कैब (प्रति सीट)",
     "Forgot password": "पासवर्ड भूल गए", "Forgot password?": "पासवर्ड भूल गए?", "Set a new password": "नया पासवर्ड बनाएं",
     "Email me a code": "ईमेल पर कोड भेजें", "Save new password": "नया पासवर्ड सेव करें",
     "Email (for password reset)": "ईमेल (पासवर्ड रीसेट के लिए)", "Code from your email": "ईमेल में आया कोड",
@@ -67,6 +80,54 @@ const STRINGS = {
     "Something else": "कुछ और", "Add details (optional)": "जानकारी लिखें (वैकल्पिक)", "Send to Raahi support": "राही सपोर्ट को भेजें",
     "Sending…": "भेज रहे हैं…", "Raahi support has your request and will contact you shortly.": "राही सपोर्ट को आपका अनुरोध मिल गया है, वे जल्द संपर्क करेंगे।",
     "Trip details copied. Paste them to someone you trust.": "यात्रा की जानकारी कॉपी हो गई। इसे किसी भरोसेमंद को भेजें।",
+    "One quick question": "एक छोटा सा सवाल", "How do you identify?": "आप खुद को क्या मानते हैं?",
+    "Woman": "महिला", "Man": "पुरुष", "Other": "अन्य", "Prefer not to say": "बताना नहीं चाहते",
+    "Women riders can turn on Women Raahi and ride only with women drivers.":
+      "महिला सवारी Women Raahi चालू करके सिर्फ़ महिला ड्राइवरों के साथ यात्रा कर सकती हैं।",
+    "Women drivers also get Women Raahi rides, booked by women who want a woman driver.":
+      "महिला ड्राइवरों को Women Raahi राइड भी मिलती हैं, जो महिला ड्राइवर चाहने वाली महिलाएं बुक करती हैं।",
+    "To change this later, contact Raahi support.": "बाद में बदलने के लिए राही सपोर्ट से संपर्क करें।",
+    "Women Raahi": "Women Raahi", "Only women drivers": "सिर्फ़ महिला ड्राइवर",
+    "On: your rides go only to women drivers": "चालू: आपकी राइड सिर्फ़ महिला ड्राइवरों को जाएगी",
+    "Tap to ride only with women drivers": "सिर्फ़ महिला ड्राइवरों के साथ जाने के लिए टैप करें",
+    "Finding a woman driver…": "महिला ड्राइवर खोज रहे हैं…",
+    "Women Raahi is on": "Women Raahi चालू है", "Women Raahi is off": "Women Raahi बंद है",
+    "Your ID is being checked": "आपकी आईडी की जांच हो रही है",
+    "You can go online as soon as it is approved. We will tell you here.": "मंज़ूरी मिलते ही आप ऑनलाइन जा सकेंगे। हम आपको यहीं बताएंगे।",
+    "Women Raahi turns on as soon as it is approved. We will tell you here.": "मंज़ूरी मिलते ही Women Raahi चालू हो जाएगा। हम आपको यहीं बताएंगे।",
+    "Verify your ID to start driving": "ड्राइविंग शुरू करने के लिए आईडी वेरिफ़ाई करें",
+    "Verify your ID for Women Raahi": "Women Raahi के लिए आईडी वेरिफ़ाई करें",
+    "Every Raahi driver is checked before their first ride.": "हर राही ड्राइवर की पहली राइड से पहले जांच होती है।",
+    "So that Women Raahi stays only for women, we check an ID once.": "Women Raahi सिर्फ़ महिलाओं के लिए रहे, इसलिए हम एक बार आईडी जांचते हैं।",
+    "Your last request was not approved:": "आपका पिछला अनुरोध मंज़ूर नहीं हुआ:",
+    "ID document": "आईडी दस्तावेज़", "Aadhaar (masked)": "आधार (मास्क्ड)", "Voter ID": "वोटर आईडी", "Passport": "पासपोर्ट", "Driving licence": "ड्राइविंग लाइसेंस",
+    "For Aadhaar, upload the masked Aadhaar, with only the last 4 digits showing.": "आधार के लिए मास्क्ड आधार अपलोड करें, जिसमें सिर्फ़ आख़िरी 4 अंक दिखें।",
+    "Photo of your vehicle's RC": "आपकी गाड़ी की आरसी की फ़ोटो",
+    "The registration certificate. Its number must match the plate above.": "रजिस्ट्रेशन सर्टिफ़िकेट। इसका नंबर ऊपर दिए नंबर प्लेट से मेल खाना चाहिए।",
+    "Photo of your ID": "आपकी आईडी की फ़ोटो", "Photo of your driving licence": "आपके ड्राइविंग लाइसेंस की फ़ोटो",
+    "A selfie": "एक सेल्फ़ी", "Your face, clearly, in good light.": "आपका चेहरा, साफ़ और अच्छी रोशनी में।",
+    "I agree that Raahi checks these documents. They are deleted as soon as the check is done.":
+      "मैं सहमत हूं कि राही इन दस्तावेज़ों की जांच करे। जांच पूरी होते ही इन्हें हटा दिया जाता है।",
+    "Vehicle number plate": "गाड़ी का नंबर प्लेट", "As painted on your vehicle.": "जैसा आपकी गाड़ी पर लिखा है।",
+    "Enter your vehicle's number plate, like JK02 AB 1234.": "अपनी गाड़ी का नंबर डालें, जैसे JK02 AB 1234।",
+    "Check the number plate before you get in": "बैठने से पहले नंबर प्लेट जांच लें",
+    "Thank you for submitting your documents": "दस्तावेज़ भेजने के लिए धन्यवाद",
+    "We will tell you the result by email and SMS:": "हम आपको नतीजा ईमेल और SMS से बताएंगे:",
+    "We will tell you the result by SMS and here in the app.": "हम आपको नतीजा SMS से और यहीं ऐप में बताएंगे।",
+    "It usually takes a few hours.": "आम तौर पर इसमें कुछ घंटे लगते हैं।", "OK": "ठीक है",
+    "Thank you for registering with Raahi": "राही के साथ रजिस्टर करने के लिए धन्यवाद",
+    "You are approved as a Raahi driver.": "आप राही ड्राइवर के रूप में मंज़ूर हो गए हैं।",
+    "You can now drive with Raahi.": "अब आप राही के साथ गाड़ी चला सकते हैं।",
+    "Your vehicle": "आपकी गाड़ी", "Start driving": "ड्राइविंग शुरू करें",
+    "Choose your location and tap Go online to start getting rides.": "अपनी लोकेशन चुनें और राइड पाने के लिए ऑनलाइन जाएं पर टैप करें।",
+    "We have also sent this to": "हमने यह जानकारी यहां भी भेजी है:",
+    "Send for checking": "जांच के लिए भेजें", "Add all the photos first.": "पहले सभी फ़ोटो जोड़ें।",
+    "That photo could not be read. Try another.": "यह फ़ोटो पढ़ी नहीं जा सकी। दूसरी आज़माएं।",
+    "Verify your ID once to turn this on": "इसे चालू करने के लिए एक बार आईडी वेरिफ़ाई करें",
+    "ID check pending. It turns on once approved.": "आईडी जांच बाकी है। मंज़ूरी के बाद चालू होगा।",
+    "You are verified. Women Raahi is ready.": "आप वेरिफ़ाइड हैं। Women Raahi तैयार है।",
+    "You are verified. You can go online now.": "आप वेरिफ़ाइड हैं। अब आप ऑनलाइन जा सकते हैं।",
+    "Your ID check was not approved.": "आपकी आईडी जांच मंज़ूर नहीं हुई।", "Close": "बंद करें",
     "Estimates use assumed rates, not live Rapido or Uber prices, and exclude their surge.":
       "अनुमान मानी गई दरों पर हैं, Rapido या Uber के लाइव किराये नहीं, और इनमें उनका सर्ज शामिल नहीं।",
   },
@@ -416,6 +477,151 @@ function renderChat(container, ride, viewerRole) {
   };
   api(`/rides/${ride.id}/messages`).then(list => list.forEach(add)).catch(() => {});
   return add;
+}
+
+// ---------- gender, asked once after the first login
+// Women Raahi needs it: women riders can ask for women drivers only, and only drivers who
+// said they are women get those rides. Saved once; changing it goes through support.
+const GENDER_CHOICES = [["female", "Woman"], ["male", "Man"], ["other", "Other"], ["unspecified", "Prefer not to say"]];
+
+function askGender(user) {
+  if (user.gender || user.role === "admin") return Promise.resolve(user);
+  return new Promise(resolve => {
+    const error = el("div", { class: "error", role: "alert" });
+    const choose = async (gender, button) => {
+      error.textContent = "";
+      sheet.querySelectorAll("button").forEach(b => { b.disabled = true; });
+      try {
+        const saved = await api("/me/gender", { method: "POST", body: { gender } });
+        sheet.remove();
+        resolve(saved);
+      } catch (e) {
+        error.textContent = e.message;
+        sheet.querySelectorAll("button").forEach(b => { b.disabled = false; });
+        button.focus();
+      }
+    };
+    const sheet = el("div", { class: "gender-backdrop" },
+      el("section", { class: "gender-sheet stack", role: "dialog", "aria-modal": "true", "aria-labelledby": "gender-title" },
+        el("div", { class: "muted" }, t("One quick question")),
+        el("h2", { id: "gender-title" }, t("How do you identify?")),
+        el("p", { class: "muted" }, t(user.role === "driver"
+          ? "Women drivers also get Women Raahi rides, booked by women who want a woman driver."
+          : "Women riders can turn on Women Raahi and ride only with women drivers.")),
+        el("div", { class: "gender-choices" }, GENDER_CHOICES.map(([value, label]) =>
+          el("button", { type: "button", class: value === "female" ? "gender-female" : "secondary",
+                         onclick: event => choose(value, event.currentTarget) }, t(label)))),
+        error,
+        el("div", { class: "muted" }, t("To change this later, contact Raahi support."))));
+    document.body.append(sheet);
+    sheet.querySelector("button").focus();
+  });
+}
+
+// ---------- ID check (KYC)
+// Every driver, and every woman rider who turns on Women Raahi, uploads an ID and a selfie
+// once. An admin reviews them; the images are deleted after the review.
+const KYC_DOCUMENTS = [["aadhaar", "Aadhaar (masked)"], ["voter", "Voter ID"], ["passport", "Passport"], ["licence", "Driving licence"]];
+
+// Phone photos are several MB. A 1280 px JPEG is plenty to read an ID, and uploads fast.
+async function shrinkImage(file, max = 1280) {
+  const bitmap = await createImageBitmap(file);
+  const scale = Math.min(1, max / Math.max(bitmap.width, bitmap.height));
+  const canvas = el("canvas", { width: Math.round(bitmap.width * scale), height: Math.round(bitmap.height * scale) });
+  canvas.getContext("2d").drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+  return canvas.toDataURL("image/jpeg", 0.82);
+}
+
+// Shown once the documents are sent: what happens next, and where the answer will arrive.
+function kycThanks(user) {
+  const close = () => { sheet.remove(); };
+  const ok = el("button", { type: "button", onclick: close }, t("OK"));
+  const sheet = el("div", { class: "gender-backdrop", onclick: event => { if (event.target === sheet) close(); } },
+    el("section", { class: "gender-sheet stack kyc-thanks", role: "alertdialog", "aria-modal": "true",
+                    "aria-labelledby": "kyc-thanks-title", "aria-describedby": "kyc-thanks-body" },
+      el("div", { class: "kyc-thanks-icon" + (user.role === "rider" ? " women" : ""), "aria-hidden": "true" }, "✓"),
+      el("h2", { id: "kyc-thanks-title" }, t("Your ID is being checked")),
+      el("div", { id: "kyc-thanks-body", class: "stack" },
+        el("p", {}, t("Thank you for submitting your documents")),
+        user.email
+          ? el("p", { class: "muted" }, t("We will tell you the result by email and SMS:"), el("br"),
+              el("strong", {}, user.email), el("br"), el("strong", {}, `+91 ${user.phone}`))
+          : el("p", { class: "muted" }, t("We will tell you the result by SMS and here in the app."), " ", el("strong", {}, `+91 ${user.phone}`)),
+        el("p", { class: "muted" }, t("It usually takes a few hours."))),
+      ok));
+  addEventListener("keydown", function onKey(event) {
+    if (event.key === "Escape") { close(); removeEventListener("keydown", onKey); }
+  });
+  document.body.append(sheet);
+  ok.focus();
+}
+
+function kycPanel(user, onSaved) {
+  const driver = user.role === "driver";
+  if (user.kyc === "pending") {
+    return el("div", { class: "kyc stack" },
+      el("div", { class: "status pulse", role: "status" }, t("Your ID is being checked")),
+      el("p", { class: "muted" }, t(driver ? "You can go online as soon as it is approved. We will tell you here."
+        : "Women Raahi turns on as soon as it is approved. We will tell you here.")));
+  }
+  const error = el("div", { class: "error", role: "alert" });
+  const photos = {};
+  const photoInput = (key, label, hint, capture) => {
+    const preview = el("img", { class: "kyc-preview hidden", alt: "" });
+    const input = el("input", { type: "file", accept: "image/*", capture, id: `kyc-${key}`, onchange: async () => {
+      const file = input.files[0];
+      if (!file) return;
+      try {
+        photos[key] = await shrinkImage(file);
+        preview.src = photos[key];
+        preview.classList.remove("hidden");
+        error.textContent = "";
+      } catch {
+        delete photos[key];
+        error.textContent = t("That photo could not be read. Try another.");
+      }
+    } });
+    return el("div", { class: "kyc-photo" }, el("label", { htmlFor: input.id }, t(label)),
+      hint && el("div", { class: "muted" }, t(hint)), input, preview);
+  };
+  const documentSelect = el("select", { id: "kyc-document" }, KYC_DOCUMENTS.map(([value, label]) => el("option", { value }, t(label))));
+  const consent = el("input", { type: "checkbox", id: "kyc-consent" });
+  const plate = el("input", { id: "kyc-plate", maxLength: 20, autocomplete: "off", autocapitalize: "characters",
+                              placeholder: "JK02 AB 1234", value: user.plate || "", class: "plate-input" });
+  const submit = el("button", { type: "submit" }, t("Send for checking"));
+  const needed = driver ? ["id_image", "licence_image", "rc_image", "selfie"] : ["id_image", "selfie"];
+
+  return el("form", { class: "kyc stack", onsubmit: async event => {
+    event.preventDefault();
+    error.textContent = "";
+    if (driver && !/^[A-Za-z0-9 .-]{6,}$/.test(plate.value.trim())) {
+      error.textContent = t("Enter your vehicle's number plate, like JK02 AB 1234.");
+      plate.focus();
+      return;
+    }
+    if (needed.some(key => !photos[key])) { error.textContent = t("Add all the photos first."); return; }
+    submit.disabled = true;
+    try {
+      onSaved(await api("/kyc", { method: "POST", body: {
+        document: documentSelect.value, id_image: photos.id_image, selfie: photos.selfie,
+        licence_image: photos.licence_image || null, rc_image: photos.rc_image || null, plate: driver ? plate.value : null, consent: consent.checked } }));
+    } catch (e) { error.textContent = e.message; } finally { submit.disabled = false; }
+  } },
+    el("h3", {}, t(driver ? "Verify your ID to start driving" : "Verify your ID for Women Raahi")),
+    el("p", { class: "muted" }, t(driver ? "Every Raahi driver is checked before their first ride."
+      : "So that Women Raahi stays only for women, we check an ID once.")),
+    user.kyc === "rejected" && el("div", { class: "error", role: "alert" }, `${t("Your last request was not approved:")} ${user.kyc_note || ""}`),
+    driver && el("div", {}, el("label", { htmlFor: "kyc-plate" }, t("Vehicle number plate")), plate,
+      el("div", { class: "muted" }, t("As painted on your vehicle."))),
+    el("div", {}, el("label", { htmlFor: "kyc-document" }, t("ID document")), documentSelect),
+    el("div", { class: "muted" }, t("For Aadhaar, upload the masked Aadhaar, with only the last 4 digits showing.")),
+    photoInput("id_image", "Photo of your ID", null, "environment"),
+    driver && photoInput("licence_image", "Photo of your driving licence", null, "environment"),
+    driver && photoInput("rc_image", "Photo of your vehicle's RC", "The registration certificate. Its number must match the plate above.", "environment"),
+    photoInput("selfie", "A selfie", "Your face, clearly, in good light.", "user"),
+    el("label", { class: "kyc-consent", htmlFor: "kyc-consent" }, consent,
+      el("span", {}, t("I agree that Raahi checks these documents. They are deleted as soon as the check is done."))),
+    error, submit);
 }
 
 // ---------- help during a ride

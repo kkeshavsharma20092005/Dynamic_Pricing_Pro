@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#ffffff" />
   <title>Raahi Admin</title>
   <link rel="icon" href="/static/icons/icon-192.png" />
-  <link rel="stylesheet" href="/static/app.css?v=14" />
+  <link rel="stylesheet" href="/static/app.css?v=20" />
 </head>
 <body>
   <header class="topbar">
@@ -19,10 +19,19 @@
   <main id="app" class="admin hidden">
     <div id="admin-banner"></div>
     <nav class="admin-nav" aria-label="Admin sections">
-      <a href="#stats">Overview</a><a href="#help">Help requests</a><a href="#business">Business &amp; profit</a><a href="#conditions">Conditions</a>
+      <a href="#stats">Overview</a><a href="#kyc">ID checks</a><a href="#help">Help requests</a><a href="#business">Business &amp; profit</a><a href="#conditions">Conditions</a>
       <a href="#limits">Fair-price limits</a><a href="#rivals">Rival rates</a><a href="#strategies">Strategies</a><a href="#rides">Recent rides</a>
     </nav>
     <div id="stats" class="cards section" style="margin-top:12px"></div>
+
+    <section class="section" id="kyc">
+      <h2>ID checks</h2>
+      <p class="muted">Every driver, and every woman rider who turns on Women Raahi, sends an ID and a selfie. Drivers also send their
+        driving licence and their vehicle's RC. Check that the face matches, the documents look genuine and the number on the RC
+        matches the plate, then confirm the gender printed on the ID. The photos are deleted as soon as you decide.</p>
+      <div id="kyc-pending" class="kyc-grid"></div>
+      <div class="card" style="margin-top:10px;overflow-x:auto"><h3>Recently reviewed</h3><table id="kyc-reviewed"></table></div>
+    </section>
 
     <section class="section" id="help">
       <h2>Help requests from rides</h2>
@@ -86,7 +95,7 @@
     </section>
   </main>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-  <script src="/static/common.js?v=14"></script>
-  <script src="/static/admin.js?v=14"></script>
+  <script src="/static/common.js?v=20"></script>
+  <script src="/static/admin.js?v=20"></script>
 </body>
 </html>

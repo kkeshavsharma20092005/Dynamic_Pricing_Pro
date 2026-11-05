@@ -22,6 +22,7 @@ import fares
 import places
 import rides
 import routing
+import sms
 from main import app
 
 JAMMU = {"lat": 32.7266, "lon": 74.8570, "name": "Jammu City"}
@@ -29,6 +30,8 @@ GANDHI_NAGAR = {"lat": 32.7100, "lon": 74.8600, "name": "Gandhi Nagar"}
 SRINAGAR = {"lat": 34.0700, "lon": 74.8100, "name": "Lal Chowk"}
 DELHI = {"lat": 28.6139, "lon": 77.2090, "name": "Delhi"}
 _next_phone = [9100000000]
+_next_plate = [1000]
+PHOTO = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAP8="
 
 
 def wait_for(fetch, condition, seconds=70):
@@ -328,6 +331,7 @@ class RideAppTests(unittest.TestCase):
         get_active = lambda: self.client.get("/api/rides/active", headers=rider).json()
         accepted = wait_for(get_active, lambda r: r and r["driver"])
         self.assertTrue(accepted["driver"]["simulated"])
+        self.assertRegex(accepted["driver"]["plate"], r"^JK\d{2} [A-Z]{2} \d{4}$")
 
         sent = self.client.post(ride_url + "/messages", headers=rider, json={"body": "Main gate par hoon"})
         self.assertEqual(sent.status_code, 200, sent.text)
@@ -338,16 +342,19 @@ class RideAppTests(unittest.TestCase):
         self.assertEqual(history[0]["status"], "completed")
 
     def test_real_driver_gets_first_offer_and_runs_the_trip(self):
-        rider, driver = self.account(), self.account("driver", "cab")
+        rider, driver = self.account(), self.driver()
         online = self.client.post("/api/driver/state", headers=driver, json={"online": True, "lat": 32.72, "lon": 74.86})
         self.assertEqual(online.status_code, 200, online.text)
         ride = self.client.post("/api/rides", headers=rider, json={
             "pickup": JAMMU, "dropoff": GANDHI_NAGAR, "vehicle": "cab"}).json()
         url = f"/api/rides/{ride['id']}"
 
-        # Another driver must not be able to take someone else's offer.
-        outsider = self.account("driver", "cab")
+        # Another driver must not be able to take someone else's offer, and an unchecked one
+        # cannot accept anything at all.
+        outsider = self.driver()
         self.assertEqual(self.client.post(url + "/accept", headers=outsider).status_code, 409)
+        unchecked = self.account("driver", "cab")
+        self.assertEqual(self.client.post(url + "/accept", headers=unchecked).status_code, 403)
 
         accepted = wait_for(lambda: self.client.post(url + "/accept", headers=driver), lambda r: r.status_code == 200, 5).json()
         self.assertFalse(accepted["driver"]["simulated"])
@@ -362,8 +369,347 @@ class RideAppTests(unittest.TestCase):
         self.assertIsNone(final["driver"]["phone"])
         self.client.post("/api/driver/state", headers=driver, json={"online": False})
 
-    def test_driver_goes_offline_when_the_connection_drops(self):
+    # ---------------------------------------------------------------- Women Raahi
+    def gendered(self, gender, role="rider", vehicle=None):
+        headers = self.account(role, vehicle)
+        response = self.client.post("/api/me/gender", headers=headers, json={"gender": gender})
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["gender"], gender)
+        return headers
+
+    def send_kyc(self, headers, **changes):
+        _next_plate[0] += 1
+        return self.client.post("/api/kyc", headers=headers, json={
+            "document": "aadhaar", "id_image": PHOTO, "selfie": PHOTO, "licence_image": PHOTO, "rc_image": PHOTO,
+            "plate": f"jk02-ab {_next_plate[0]}", "consent": True, **changes})
+
+    def pending_check(self, headers):
+        phone = self.client.get("/api/me", headers=headers).json()["phone"]
+        pending = self.client.get("/api/admin/verifications", headers=self.admin).json()["pending"]
+        return next(v for v in pending if v["phone"] == phone)
+
+    def review(self, headers, approve=True, gender=None, note=""):
+        check = self.pending_check(headers)
+        return self.client.post(f"/api/admin/verifications/{check['id']}", headers=self.admin,
+                                json={"approve": approve, "gender": gender, "note": note})
+
+    def verify(self, headers, gender):
+        sent = self.send_kyc(headers)
+        self.assertEqual(sent.status_code, 200, sent.text)
+        self.assertEqual(sent.json()["kyc"], "pending")
+        approved = self.review(headers, True, gender)
+        self.assertEqual(approved.status_code, 200, approved.text)
+        return headers
+
+    def driver(self, vehicle="cab", gender="male"):
+        return self.verify(self.account("driver", vehicle), gender)
+
+    def woman_rider(self):
+        return self.verify(self.gendered("female"), "female")
+
+    def test_gender_is_asked_once_and_cannot_be_switched(self):
+        rider = self.account()
+        self.assertIsNone(self.client.get("/api/me", headers=rider).json()["gender"])
+        self.assertEqual(self.client.post("/api/me/gender", headers=rider, json={"gender": "robot"}).status_code, 422)
+        self.assertEqual(self.client.post("/api/me/gender", headers=rider, json={"gender": "unspecified"}).status_code, 200)
+        again = self.client.post("/api/me/gender", headers=rider, json={"gender": "female"})
+        self.assertEqual(again.status_code, 409)
+        self.assertEqual(self.client.get("/api/me", headers=rider).json()["gender"], "unspecified")
+        self.assertEqual(self.client.post("/api/me/gender", headers=self.admin, json={"gender": "male"}).status_code, 403)
+
+    def test_only_women_can_book_women_raahi(self):
+        for gender in (None, "male", "other", "unspecified"):
+            rider = self.gendered(gender) if gender else self.account()
+            response = self.client.post("/api/rides", headers=rider, json={
+                "pickup": JAMMU, "dropoff": GANDHI_NAGAR, "vehicle": "cab", "women_only": True})
+            self.assertEqual(response.status_code, 403, gender)
+
+    def test_women_raahi_skips_men_and_goes_to_a_woman_driver(self):
+        rider = self.woman_rider()
+        man = self.driver(gender="male")
+        woman = self.driver(gender="female")
+        for driver in (man, woman):
+            online = self.client.post("/api/driver/state", headers=driver, json={"online": True, "lat": 32.72, "lon": 74.86})
+            self.assertEqual(online.status_code, 200, online.text)
+        try:
+            ride = self.client.post("/api/rides", headers=rider, json={
+                "pickup": JAMMU, "dropoff": GANDHI_NAGAR, "vehicle": "cab", "women_only": True}).json()
+            self.assertTrue(ride["women_only"])
+            url = f"/api/rides/{ride['id']}"
+            accepted = wait_for(lambda: self.client.post(url + "/accept", headers=woman), lambda r: r.status_code == 200, 5).json()
+            self.assertTrue(accepted["women_only"])
+            self.assertEqual(self.client.post(url + "/accept", headers=man).status_code, 409)
+            self.client.post(url + "/cancel", headers=rider)
+        finally:
+            for driver in (man, woman):
+                self.client.post("/api/driver/state", headers=driver, json={"online": False})
+
+    def test_women_raahi_demo_driver_is_a_woman(self):
+        rider = self.woman_rider()
+        man = self.driver(gender="male")
+        self.client.post("/api/driver/state", headers=man, json={"online": True, "lat": 32.72, "lon": 74.86})
+        try:
+            ride = self.client.post("/api/rides", headers=rider, json={
+                "pickup": JAMMU, "dropoff": GANDHI_NAGAR, "vehicle": "cab", "women_only": True}).json()
+            accepted = wait_for(lambda: self.client.get("/api/rides/active", headers=rider).json(),
+                                lambda r: r and r["driver"], 10)
+            self.assertTrue(accepted["driver"]["simulated"])
+            self.assertIn(accepted["driver"]["name"], rides.SIM_WOMEN_NAMES)
+            self.client.post(f"/api/rides/{ride['id']}/cancel", headers=rider)
+        finally:
+            self.client.post("/api/driver/state", headers=man, json={"online": False})
+
+    def test_normal_rides_are_not_women_only(self):
+        rider = self.gendered("female")
+        ride = self.book(rider)
+        self.assertFalse(ride["women_only"])
+        self.client.post(f"/api/rides/{ride['id']}/cancel", headers=rider)
+
+    # ---------------------------------------------------------------- ID checks
+    def test_unverified_driver_cannot_go_online(self):
         driver = self.account("driver", "cab")
+        state = {"online": True, "lat": 32.72, "lon": 74.86}
+        self.assertEqual(self.client.post("/api/driver/state", headers=driver, json=state).status_code, 403)
+        self.send_kyc(driver)
+        self.assertEqual(self.client.post("/api/driver/state", headers=driver, json=state).status_code, 403)
+        self.review(driver, True, "male")
+        self.assertEqual(self.client.post("/api/driver/state", headers=driver, json=state).status_code, 200)
+        self.client.post("/api/driver/state", headers=driver, json={"online": False})
+
+    def test_women_raahi_needs_a_verified_id(self):
+        rider = self.gendered("female")
+        booking = {"pickup": JAMMU, "dropoff": GANDHI_NAGAR, "vehicle": "cab", "women_only": True}
+        self.assertEqual(self.client.post("/api/rides", headers=rider, json=booking).status_code, 403)
+        self.verify(rider, "female")
+        ride = self.client.post("/api/rides", headers=rider, json=booking)
+        self.assertEqual(ride.status_code, 200, ride.text)
+        self.client.post(f"/api/rides/{ride.json()['id']}/cancel", headers=rider)
+
+    def test_only_women_riders_can_ask_for_women_raahi_checks(self):
+        for gender in ("male", "other", "unspecified"):
+            self.assertEqual(self.send_kyc(self.gendered(gender)).status_code, 403, gender)
+        self.assertEqual(self.send_kyc(self.account()).status_code, 403)
+        self.assertEqual(self.send_kyc(self.admin).status_code, 403)
+
+    def test_kyc_upload_is_checked(self):
+        driver = self.account("driver", "cab")
+        self.assertEqual(self.send_kyc(driver, consent=False).status_code, 422)
+        self.assertEqual(self.send_kyc(driver, licence_image=None).status_code, 422)
+        self.assertEqual(self.send_kyc(driver, rc_image=None).status_code, 422)
+        self.assertEqual(self.send_kyc(driver, rc_image="not a picture").status_code, 422)
+        self.assertEqual(self.send_kyc(driver, document="library card").status_code, 422)
+        self.assertEqual(self.send_kyc(driver, selfie="<script>alert(1)</script>").status_code, 422)
+        self.assertEqual(self.send_kyc(driver, id_image="data:image/svg+xml;base64,PHN2Zz4=").status_code, 422)
+        self.assertEqual(self.send_kyc(driver).status_code, 200)
+        self.assertEqual(self.send_kyc(driver).status_code, 409)       # already waiting
+
+    def test_drivers_must_give_a_real_looking_number_plate(self):
+        driver = self.account("driver", "cab")
+        for bad in (None, "", "12345", "HELLO WORLD", "JK02AB12345"):
+            self.assertEqual(self.send_kyc(driver, plate=bad).status_code, 422, bad)
+        sent = self.send_kyc(driver, plate="22 BH 1234 AA")      # Bharat series
+        self.assertEqual(sent.status_code, 200, sent.text)
+        self.assertEqual(sent.json()["plate"], "22BH1234AA")
+
+    def test_two_drivers_cannot_share_a_number_plate(self):
+        first, second = self.account("driver", "cab"), self.account("driver", "cab")
+        self.assertEqual(self.send_kyc(first, plate="JK21 C 4321").status_code, 200)
+        self.assertEqual(self.send_kyc(second, plate="jk-21-c-4321").status_code, 409)
+        # A rejected driver's plate is free again.
+        self.review(first, False, note="Blurry licence")
+        self.assertEqual(self.send_kyc(second, plate="JK21C4321").status_code, 200)
+
+    def test_rider_sees_the_driver_number_plate(self):
+        rider, driver = self.account(), self.account("driver", "cab")
+        self.send_kyc(driver, plate="jk01 xy 0042")
+        self.assertEqual(self.pending_check(driver)["plate"], "JK01 XY 0042")
+        self.review(driver, True, "male")
+        self.client.post("/api/driver/state", headers=driver, json={"online": True, "lat": 32.72, "lon": 74.86})
+        try:
+            ride = self.client.post("/api/rides", headers=rider, json={
+                "pickup": JAMMU, "dropoff": GANDHI_NAGAR, "vehicle": "cab"}).json()
+            url = f"/api/rides/{ride['id']}"
+            wait_for(lambda: self.client.post(url + "/accept", headers=driver), lambda r: r.status_code == 200, 5)
+            seen = self.client.get("/api/rides/active", headers=rider).json()
+            self.assertEqual(seen["driver"]["plate"], "JK01 XY 0042")
+            self.client.post(url + "/cancel", headers=rider)
+        finally:
+            self.client.post("/api/driver/state", headers=driver, json={"online": False})
+
+    def outbox(self):
+        """Capture emails and SMS instead of sending them."""
+        mails, texts = [], []
+        patches = (mock.patch.object(mailer, "send", lambda to, subject, body: mails.append((to, subject, body))),
+                   mock.patch.object(sms, "send", lambda phone, text: texts.append((phone, text))))
+        for patch in patches:
+            patch.start()
+            self.addCleanup(patch.stop)
+        return mails, texts
+
+    def test_driver_gets_approval_by_email_and_sms(self):
+        mails, texts = self.outbox()
+        driver = self.account("driver", "cab", email="gauri@example.com")
+        me = self.client.get("/api/me", headers=driver).json()
+        self.send_kyc(driver, plate="JK02 GT 7001")
+        self.assertEqual((mails, texts), ([], []))         # nothing is sent until the decision
+        self.review(driver, True, "female")
+        self.assertEqual(len(mails), 1)
+        to, subject, body = mails[0]
+        self.assertEqual(to, "gauri@example.com")
+        self.assertEqual(subject, "Verification completed: you can now drive with Raahi")
+        self.assertIn("JK02 GT 7001", body)
+        self.assertIn("go online, accept rides and drive with Raahi", body)
+        self.assertEqual(texts[0][0], me["phone"])
+        self.assertIn("go online, accept rides and drive with Raahi", texts[0][1])
+
+    def test_women_raahi_rejection_reason_reaches_the_rider(self):
+        mails, texts = self.outbox()
+        rider = self.gendered("female")
+        self.send_kyc(rider)
+        self.review(rider, False, note="The photo is blurry")
+        self.assertEqual(mails[0][1], "We could not verify your ID for Women Raahi")
+        self.assertIn("The photo is blurry", mails[0][2])
+        self.assertIn("The photo is blurry", texts[0][1])
+
+    def test_women_raahi_approval_message(self):
+        mails, texts = self.outbox()
+        rider = self.verify(self.gendered("female"), "female")
+        self.assertEqual(mails[0][1], "Women Raahi is ready for you")
+        self.assertIn("women drivers", texts[0][1])
+
+    def test_mail_failure_does_not_block_the_review(self):
+        def broken(*args):
+            raise mailer.MailError("server down")
+        driver = self.account("driver", "cab")
+        self.send_kyc(driver)
+        with mock.patch.object(mailer, "send", broken), mock.patch.object(sms, "send", lambda *a: None):
+            self.assertEqual(self.review(driver, True, "male").status_code, 200)
+        self.assertEqual(self.client.get("/api/me", headers=driver).json()["kyc"], "approved")
+
+    def test_rejection_explains_why_and_allows_a_new_try(self):
+        driver = self.account("driver", "cab")
+        self.send_kyc(driver)
+        self.assertEqual(self.review(driver, False, note="").status_code, 422)
+        self.assertEqual(self.review(driver, False, note="Selfie is too dark").status_code, 200)
+        me = self.client.get("/api/me", headers=driver).json()
+        self.assertEqual((me["kyc"], me["kyc_note"]), ("rejected", "Selfie is too dark"))
+        self.verify(driver, "male")
+        self.assertEqual(self.client.get("/api/me", headers=driver).json()["kyc"], "approved")
+        self.assertEqual(self.send_kyc(driver).status_code, 409)
+
+    def test_document_photos_are_deleted_after_review(self):
+        driver = self.verify(self.account("driver", "cab"), "male")
+        user_id = self.client.get("/api/me", headers=driver).json()["id"]
+        with appdb.connect() as conn:
+            row = conn.execute("SELECT * FROM verifications WHERE user_id = ?", (user_id,)).fetchone()
+        self.assertEqual((row["id_image"], row["selfie"], row["licence_image"], row["rc_image"]), ("", "", None, None))
+        reviewed = self.client.get("/api/admin/verifications", headers=self.admin).json()["reviewed"]
+        self.assertNotIn("selfie", next(v for v in reviewed if v["id"] == row["id"]))
+
+    def test_the_document_decides_gender_not_the_answer(self):
+        driver = self.gendered("female", "driver", "cab")
+        self.verify(driver, "male")
+        self.assertEqual(self.client.get("/api/me", headers=driver).json()["gender"], "male")
+        rider = self.gendered("female")
+        self.send_kyc(rider)
+        self.assertEqual(self.review(rider, True, "male").status_code, 422)
+        self.assertEqual(self.review(rider, True, None).status_code, 422)
+
+    def test_only_admins_see_id_checks(self):
+        rider = self.account()
+        self.assertEqual(self.client.get("/api/admin/verifications", headers=rider).status_code, 403)
+        self.assertEqual(self.client.post("/api/admin/verifications/1", headers=rider, json={"approve": True}).status_code, 403)
+
+    def test_driver_who_comes_online_after_booking_can_accept_and_rider_is_told(self):
+        rider, driver = self.account(), self.driver("auto")
+        rider_token = rider["Authorization"].removeprefix("Bearer ")
+        with self.client.websocket_connect(f"/api/ws?token={rider_token}") as rider_ws:
+            ride = self.book(rider, "auto")
+            # The driver goes online only after the ride was booked, before the demo driver steps in.
+            time.sleep(0.5)
+            self.client.post("/api/driver/state", headers=driver, json={"online": True, "lat": 32.73, "lon": 74.86})
+            url = f"/api/rides/{ride['id']}"
+            accepted = wait_for(lambda: self.client.post(url + "/accept", headers=driver),
+                                lambda r: r.status_code == 200, 5).json()
+            self.assertFalse(accepted["driver"]["simulated"])
+
+            while True:
+                event = rider_ws.receive_json()
+                if event["type"] == "confirmed":
+                    break
+            told = event["ride"]
+            self.assertEqual(told["id"], ride["id"])
+            self.assertEqual(told["driver"]["name"], "Test driver")
+            self.assertEqual(told["driver"]["vehicle"], "Auto")
+            self.assertRegex(told["driver"]["plate"], r"^JK02 AB \d{4}$")   # shown on the pop-up
+            self.assertTrue(told["driver"]["phone"])
+            self.assertGreater(told["driver"]["to_pickup"]["minutes"], 0)
+            self.assertNotIn("business", told["quote"])
+        self.client.post(url + "/cancel", headers=rider)
+        self.client.post("/api/driver/state", headers=driver, json={"online": False})
+
+    def test_demo_driver_waits_while_a_real_driver_holds_the_offer(self):
+        rider, driver = self.account(), self.driver("bike")
+        self.client.post("/api/driver/state", headers=driver, json={"online": True, "lat": 32.72, "lon": 74.86})
+        ride = self.book(rider, "bike")
+        url = f"/api/rides/{ride['id']}"
+        # Well past the no-driver wait, the ride is still kept for the real driver.
+        time.sleep(rides.NO_DRIVER_WAIT_SECONDS + 2)
+        self.assertEqual(self.client.get("/api/rides/active", headers=rider).json()["status"], "searching")
+        # Once they decline, the demo system takes over as before.
+        self.assertEqual(self.client.post(url + "/decline", headers=driver).status_code, 200)
+        accepted = wait_for(lambda: self.client.get("/api/rides/active", headers=rider).json(),
+                            lambda r: r and r["driver"], 10)
+        self.assertTrue(accepted["driver"]["simulated"])
+        self.client.post(url + "/cancel", headers=rider)
+        self.client.post("/api/driver/state", headers=driver, json={"online": False})
+
+    def test_unanswered_offer_goes_to_the_demo_driver_when_time_is_up(self):
+        self.assertEqual((rides.OFFER_SECONDS, rides.REAL_SEARCH_SECONDS), (60, 60))
+        rider, driver = self.account(), self.driver("cab")
+        self.client.post("/api/driver/state", headers=driver, json={"online": True, "lat": 32.72, "lon": 74.86})
+        # The same rule as the real minute, shortened so the test runs quickly.
+        with mock.patch.object(rides, "OFFER_SECONDS", 3), mock.patch.object(rides, "REAL_SEARCH_SECONDS", 3):
+            ride = self.book(rider, "cab")
+            time.sleep(1.5)
+            self.assertEqual(self.client.get("/api/rides/active", headers=rider).json()["status"], "searching")
+            taken = wait_for(lambda: self.client.get("/api/rides/active", headers=rider).json(),
+                             lambda r: r and r["driver"], 10)
+        self.assertTrue(taken["driver"]["simulated"])
+        # The driver's offer has expired, so they can no longer take it.
+        self.assertEqual(self.client.post(f"/api/rides/{ride['id']}/accept", headers=driver).status_code, 409)
+        self.client.post(f"/api/rides/{ride['id']}/cancel", headers=rider)
+        self.client.post("/api/driver/state", headers=driver, json={"online": False})
+
+    def test_rider_can_rate_a_completed_trip_once_or_skip(self):
+        rider, driver = self.account(), self.driver("erickshaw")
+        self.client.post("/api/driver/state", headers=driver, json={"online": True, "lat": 32.72, "lon": 74.86})
+        ride = self.book(rider, "erickshaw")
+        url = f"/api/rides/{ride['id']}"
+        good = {"rating": 5, "tags": ["safe", "polite"], "comment": "Very nice ride"}
+        wait_for(lambda: self.client.post(url + "/accept", headers=driver), lambda r: r.status_code == 200, 5)
+        self.assertEqual(self.client.post(url + "/feedback", headers=rider, json=good).status_code, 409)
+        for step in ("arrived", "in_progress", "completed"):
+            self.client.post(f"{url}/advance/{step}", headers=driver)
+        self.client.post("/api/driver/state", headers=driver, json={"online": False})
+
+        # Skipping sends nothing: the trip simply has no feedback.
+        self.assertIsNone(self.client.get("/api/rides", headers=rider).json()[0]["feedback"])
+        self.assertEqual(self.client.post(url + "/feedback", headers=driver, json=good).status_code, 403)
+        self.assertEqual(self.client.post(url + "/feedback", headers=rider, json={"rating": 6}).status_code, 422)
+        self.assertEqual(self.client.post(url + "/feedback", headers=rider, json={"rating": 4, "tags": ["bogus"]}).status_code, 422)
+
+        sent = self.client.post(url + "/feedback", headers=rider, json=good)
+        self.assertEqual(sent.status_code, 200, sent.text)
+        self.assertEqual(self.client.post(url + "/feedback", headers=rider, json=good).status_code, 409)
+        seen = self.client.get("/api/rides", headers=rider).json()[0]["feedback"]
+        self.assertEqual((seen["rating"], seen["tags"], seen["comment"]), (5, ["safe", "polite"], "Very nice ride"))
+        self.assertEqual(self.client.get("/api/rides", headers=driver).json()[0]["feedback"]["rating"], 5)
+        overview = self.client.get("/api/admin/overview", headers=self.admin).json()
+        self.assertGreaterEqual(overview["ratings"]["count"], 1)
+
+    def test_driver_goes_offline_when_the_connection_drops(self):
+        driver = self.driver()
         token = driver["Authorization"].removeprefix("Bearer ")
         driver_id = self.client.get("/api/me", headers=driver).json()["id"]
         with self.client.websocket_connect(f"/api/ws?token={token}"):
@@ -429,6 +775,16 @@ class FareTests(unittest.TestCase):
     def test_every_town_is_inside_the_service_area(self):
         for place in places.BY_NAME.values():
             self.assertTrue(places.in_service_area(place["lat"], place["lon"]), place["name"])
+
+    def test_remote_corners_of_jk_can_be_booked(self):
+        # Spots far from any town, with no named place nearby, are still inside J&K.
+        for name, lat, lon in (("Gurez", 34.63, 74.84), ("Machil", 34.55, 74.37), ("Paddar", 33.25, 76.15),
+                               ("Bani", 32.69, 75.81), ("Lakhanpur", 32.39, 75.57)):
+            self.assertTrue(places.in_service_area(lat, lon), name)
+
+    def test_neighbouring_states_and_ladakh_are_outside(self):
+        for name, lat, lon in (("Pathankot", 32.27, 75.65), ("Leh", 34.15, 77.58), ("Muzaffarabad", 34.37, 73.47)):
+            self.assertFalse(places.in_service_area(lat, lon), name)
 
     def test_sialkot_and_delhi_are_outside_the_service_area(self):
         self.assertFalse(places.in_service_area(32.49, 74.53))
