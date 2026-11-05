@@ -36,9 +36,41 @@ Customer, driver and admin accounts are separate, each with its own password and
 number can hold both a customer and a driver account, and both can stay signed in together in one browser.
 Nobody can sign up as an admin.
 
-On first start the server creates the admin account (mobile `9000000000`) and prints its generated
-password once. To choose your own, set `ADMIN_PASSWORD` before the first start. If you lose it, delete
-`data/app.db`, which also deletes all accounts and rides.
+Creating an account does not sign you in: you then log in with your number and password. A login
+lasts until the browser tab closes (a reload keeps it), so coming back to the app asks for credentials again.
+
+### Forgot password (email codes)
+
+Sign-up asks for an email address. **Forgot password?** on the login page emails a 6-digit code to
+that address; entering the code with a new password changes it and signs out every older session.
+Codes last 15 minutes, work once, and lock after 5 wrong tries. The admin password is not reset by
+email (set `ADMIN_PASSWORD` instead). Accounts created before this change have no email, so they
+cannot use it.
+
+To send the emails through Gmail, turn on 2-Step Verification for the sending Google account, create
+an [App Password](https://myaccount.google.com/apppasswords), and set:
+
+```bash
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USER=yourname@gmail.com
+SMTP_PASSWORD=<16-character app password>
+MAIL_FROM="Raahi <yourname@gmail.com>"   # optional
+```
+
+Without `SMTP_HOST` nothing is sent: the server prints each email, code included, to its log, so you
+can try the flow locally.
+
+### Help during a ride
+
+While a ride is live, riders and drivers see a red **Help** button. It offers one-tap calls to 112
+(police and emergency), 108 (ambulance) and 1091 (women helpline), sharing the trip details, and a
+report to Raahi support with the problem, a note and the phone's location. Reports appear at once in
+the admin panel under **Help requests**.
+
+The admin logs in with mobile `6006083467` (change it with `ADMIN_PHONE`). Set the password with
+`ADMIN_PASSWORD`: the server applies both on every start, so changing either changes the admin
+login. Without `ADMIN_PASSWORD`, a new admin account gets a generated password, printed once.
 
 To see a real driver handle a ride, open the driver app in a second browser profile, go online near
 the pickup, and book a matching vehicle. If no real driver accepts, a simulated one takes the ride.

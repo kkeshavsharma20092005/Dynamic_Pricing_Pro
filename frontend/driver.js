@@ -119,11 +119,13 @@ function renderRide() {
     finished && el("button", { type: "button", onclick: backToWaiting }, "Back to waiting"),
   );
   if (!finished && !existing) addMessage = renderChat(chatArea, ride, "driver");
+  updateRideHelp(ride, "driver");
 }
 
 function backToWaiting() {
   goScreen("waiting", { replace: true });
   ride = addMessage = null;
+  updateRideHelp(null);
   if (routeLine) { routeLine.remove(); routeLine = null; }
   render();
 }

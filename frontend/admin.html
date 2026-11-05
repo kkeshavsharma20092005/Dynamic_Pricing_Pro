@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#ffffff" />
   <title>Raahi Admin</title>
   <link rel="icon" href="/static/icons/icon-192.png" />
-  <link rel="stylesheet" href="/static/app.css?v=13" />
+  <link rel="stylesheet" href="/static/app.css?v=14" />
 </head>
 <body>
   <header class="topbar">
@@ -19,10 +19,16 @@
   <main id="app" class="admin hidden">
     <div id="admin-banner"></div>
     <nav class="admin-nav" aria-label="Admin sections">
-      <a href="#stats">Overview</a><a href="#business">Business &amp; profit</a><a href="#conditions">Conditions</a>
+      <a href="#stats">Overview</a><a href="#help">Help requests</a><a href="#business">Business &amp; profit</a><a href="#conditions">Conditions</a>
       <a href="#limits">Fair-price limits</a><a href="#rivals">Rival rates</a><a href="#strategies">Strategies</a><a href="#rides">Recent rides</a>
     </nav>
     <div id="stats" class="cards section" style="margin-top:12px"></div>
+
+    <section class="section" id="help">
+      <h2>Help requests from rides</h2>
+      <p class="muted">Riders and drivers send these from the Help button during a ride. New ones appear here as they arrive.</p>
+      <div class="card" style="overflow-x:auto"><table id="help-table"></table></div>
+    </section>
 
     <section class="section" id="business">
       <h2>Business model: profit on every ride</h2>
@@ -80,7 +86,7 @@
     </section>
   </main>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-  <script src="/static/common.js?v=13"></script>
-  <script src="/static/admin.js?v=13"></script>
+  <script src="/static/common.js?v=14"></script>
+  <script src="/static/admin.js?v=14"></script>
 </body>
 </html>

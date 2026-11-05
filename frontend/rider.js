@@ -289,11 +289,13 @@ function showRide(next) {
     finished && el("button", { type: "button", onclick: resetBooking }, t("Book another ride")),
   );
   if (driver && !finished && !existingChat) addMessage = renderChat(chatArea, ride, "rider");
+  updateRideHelp(ride, "rider");
 }
 
 function resetBooking() {
   goScreen("book", { replace: true });
   ride = quote = dropoff = pickup = addMessage = null;
+  updateRideHelp(null);
   ["pickup", "dropoff", "driver"].forEach(k => marker(k, null));
   drawRoute(null);
   renderBooking();

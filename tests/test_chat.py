@@ -191,10 +191,12 @@ class ConversationTests(unittest.TestCase):
 
     def setUp(self):
         phone = str(int(time.time() * 1000))[-9:]
+        account = {"phone": "9" + phone, "password": "password123"}
         response = self.client.post("/api/register", json={
-            "phone": "9" + phone, "name": "Chat Rider", "password": "password123"})
+            **account, "name": "Chat Rider", "email": "chat@example.com"})
         self.assertEqual(response.status_code, 200, response.text)
-        self.headers = {"Authorization": "Bearer " + response.json()["token"]}
+        login = self.client.post("/api/login", json=account)
+        self.headers = {"Authorization": "Bearer " + login.json()["token"]}
         time.sleep(0.01)
 
     def say(self, message):

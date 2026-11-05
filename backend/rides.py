@@ -7,6 +7,7 @@ driver takes the ride, so a demo always completes. Simulated trips run at demo s
 parts are simulated.
 """
 import asyncio
+import hashlib
 import json
 import os
 import random
@@ -24,6 +25,7 @@ import business
 import chatbot
 import geocode
 import localities
+import mailer
 import placesdb
 from config import OUTPUT_DIR, REGIONS
 from fares import (DEFAULT_RIVAL_RATES, VEHICLES, available_vehicles, default_conditions,
@@ -82,6 +84,7 @@ class RegisterBody(BaseModel):
     phone: str
     name: str = Field(..., min_length=2, max_length=60)
     password: str = Field(..., min_length=8, max_length=128)
+    email: str = Field(..., max_length=254)
     role: str = "rider"
     vehicle: str | None = None
 
@@ -92,9 +95,33 @@ class LoginBody(BaseModel):
     role: str = "rider"
 
 
+class ForgotBody(BaseModel):
+    phone: str
+    role: str = "rider"
+
+
+class ResetBody(BaseModel):
+    phone: str
+    role: str = "rider"
+    code: str = Field(..., max_length=12)
+    password: str = Field(..., min_length=8, max_length=128)
+
+
+EMAIL_PATTERN = re.compile(r"[^@\s]+@[^@\s]+\.[^@\s]+")
+RESET_MINUTES = 15
+RESET_MAX_ATTEMPTS = 5
+RESET_RESEND_SECONDS = 60
+
+
+def password_version(user: dict) -> str:
+    # Changes whenever the password does, so a reset signs out every older session.
+    return hashlib.sha256(user["password_hash"].encode()).hexdigest()[:16]
+
+
 def make_token(user: dict) -> str:
     expires = datetime.now(timezone.utc) + timedelta(days=TOKEN_DAYS)
-    return jwt.encode({"sub": str(user["id"]), "exp": expires}, SECRET, algorithm="HS256")
+    return jwt.encode({"sub": str(user["id"]), "pv": password_version(user), "exp": expires},
+                      SECRET, algorithm="HS256")
 
 
 def user_from_token(token: str) -> dict | None:
@@ -102,7 +129,10 @@ def user_from_token(token: str) -> dict | None:
         payload = jwt.decode(token, SECRET, algorithms=["HS256"])
     except jwt.PyJWTError:
         return None
-    return appdb.get_user(int(payload["sub"]))
+    user = appdb.get_user(int(payload["sub"]))
+    if user is None or payload.get("pv") != password_version(user):
+        return None
+    return user
 
 
 def current_user(authorization: str = Header(default="")) -> dict:
@@ -119,7 +149,7 @@ def require_admin(user: dict = Depends(current_user)) -> dict:
 
 
 def public_user(user: dict) -> dict:
-    return {k: user[k] for k in ("id", "phone", "name", "role", "vehicle")}
+    return {k: user.get(k) for k in ("id", "phone", "name", "role", "vehicle", "email")}
 
 
 @router.post("/register")
@@ -130,13 +160,17 @@ def register(body: RegisterBody):
         raise HTTPException(422, "Role must be rider or driver.")
     if body.role == "driver" and body.vehicle not in VEHICLES:
         raise HTTPException(422, "Choose a vehicle type.")
+    email = body.email.strip().lower()
+    if not EMAIL_PATTERN.fullmatch(email):
+        raise HTTPException(422, "Enter a valid email address.")
     try:
         user_id = appdb.create_user(body.phone, body.name.strip(), body.role, body.password,
-                                    body.vehicle if body.role == "driver" else None)
+                                    body.vehicle if body.role == "driver" else None, email)
     except appdb.IntegrityError:
         raise HTTPException(409, f"This number already has a {body.role} account.")
-    user = appdb.get_user(user_id)
-    return {"token": make_token(user), "user": public_user(user)}
+    # No session here: a new account logs in with its credentials like any other.
+    return {"user": public_user(appdb.get_user(user_id)),
+            "message": "Account created. Log in with your mobile number and password."}
 
 
 @router.post("/login")
@@ -150,6 +184,49 @@ def login(body: LoginBody):
 @router.get("/me")
 def me(user: dict = Depends(current_user)):
     return public_user(user)
+
+
+# The answer is the same whether or not the number has an account, so this cannot be used
+# to find out who is registered.
+RESET_SENT = ("If this number has an account with an email address, we have emailed it a "
+              f"6-digit code. The code works for {RESET_MINUTES} minutes.")
+
+
+@router.post("/password/forgot")
+def forgot_password(body: ForgotBody):
+    user = appdb.find_user(body.phone, body.role)
+    if user is None or not user.get("email") or user["role"] == "admin":
+        return {"message": RESET_SENT}
+    previous = appdb.get_reset(user["id"])
+    if previous and time.time() - previous["sent_at"] < RESET_RESEND_SECONDS:
+        return {"message": RESET_SENT}
+    code = f"{secrets.randbelow(10 ** 6):06d}"
+    appdb.save_reset_code(user["id"], code, time.time() + RESET_MINUTES * 60)
+    try:
+        mailer.send(user["email"], "Your Raahi password reset code",
+                    f"Hello {user['name']},\n\n"
+                    f"Your code to reset your Raahi {user['role']} password is: {code}\n\n"
+                    f"It works for {RESET_MINUTES} minutes. If you did not ask for this, ignore "
+                    f"this email: your password stays the same.\n\nRaahi")
+    except mailer.MailError:
+        appdb.delete_reset(user["id"])
+        raise HTTPException(503, "We could not send the email right now. Please try again in a few minutes.")
+    return {"message": RESET_SENT}
+
+
+@router.post("/password/reset")
+def reset_password(body: ResetBody):
+    invalid = HTTPException(400, "That code is wrong or has expired. Ask for a new code.")
+    user = appdb.find_user(body.phone, body.role)
+    reset = appdb.get_reset(user["id"]) if user else None
+    if reset is None or time.time() > reset["expires_at"] or reset["attempts"] >= RESET_MAX_ATTEMPTS:
+        raise invalid
+    if not appdb.reset_code_matches(reset, body.code.strip()):
+        appdb.count_reset_attempt(user["id"])
+        raise invalid
+    appdb.set_password(user["id"], body.password)
+    appdb.delete_reset(user["id"])
+    return {"message": "Password changed. Log in with your new password."}
 
 
 # ------------------------------------------------------------------ conditions
@@ -545,6 +622,76 @@ async def advance(ride_id: int, status: str, user: dict = Depends(require_driver
 # ------------------------------------------------------------------ chat
 class MessageBody(BaseModel):
     body: str = Field(..., min_length=1, max_length=500)
+
+
+HELP_TOPICS = {
+    "safety": "I feel unsafe",
+    "driver": "Problem with the driver",
+    "rider": "Problem with the rider",
+    "route": "Wrong route or stop",
+    "vehicle": "Vehicle problem or breakdown",
+    "payment": "Fare or payment",
+    "other": "Something else",
+}
+HELP_PER_RIDE = 10
+
+
+class HelpBody(BaseModel):
+    topic: str
+    note: str = Field("", max_length=500)
+    lat: float | None = Field(None, ge=-90, le=90)
+    lon: float | None = Field(None, ge=-180, le=180)
+
+
+@router.post("/rides/{ride_id}/help")
+async def ask_for_help(ride_id: int, body: HelpBody, user: dict = Depends(current_user)):
+    """A rider or driver asks Raahi support for help during a ride. Admins see it live."""
+    ride = ride_for_participant(ride_id, user)
+    if user["role"] == "admin":
+        raise HTTPException(403, "Only the rider or driver can ask for help.")
+    if body.topic not in HELP_TOPICS:
+        raise HTTPException(422, "Choose what you need help with.")
+    if ride["status"] not in ACTIVE:
+        raise HTTPException(409, "Help requests are for rides that are still going.")
+    note = body.note.strip()
+    if body.lat is not None and body.lon is not None:
+        note = f"{note} [location {body.lat:.5f}, {body.lon:.5f}]".strip()
+    with appdb.connect() as conn:
+        sent = conn.execute("SELECT COUNT(*) AS n FROM help_requests WHERE ride_id = ? AND user_id = ?",
+                            (ride_id, user["id"])).fetchone()["n"]
+        if sent >= HELP_PER_RIDE:
+            raise HTTPException(429, "You have sent several requests for this ride. For urgent help, call 112.")
+        now = time.time()
+        cursor = conn.execute(
+            "INSERT INTO help_requests (ride_id, user_id, role, topic, note, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+            (ride_id, user["id"], user["role"], body.topic, note, now))
+    request = help_view({"id": cursor.lastrowid, "ride_id": ride_id, "role": user["role"], "topic": body.topic,
+                         "note": note, "created_at": now, "name": user["name"], "phone": user["phone"],
+                         "pickup": ride["pickup"], "dropoff": ride["dropoff"], "status": ride["status"]})
+    for admin_id in list(hub.admins):
+        await hub.send(admin_id, {"type": "help", "help": request})
+    return {"id": request["id"], "message": "Raahi support has your request and will contact you shortly."}
+
+
+def place_name(place) -> str:
+    return (place if isinstance(place, dict) else json.loads(place)).get("name") or "Map pin"
+
+
+def help_view(row: dict) -> dict:
+    return {"id": row["id"], "ride_id": row["ride_id"], "role": row["role"], "topic": row["topic"],
+            "topic_label": HELP_TOPICS.get(row["topic"], row["topic"]), "note": row["note"],
+            "created_at": row["created_at"], "name": row["name"], "phone": row["phone"],
+            "route": f"{place_name(row['pickup'])} → {place_name(row['dropoff'])}", "ride_status": row["status"]}
+
+
+@router.get("/admin/help")
+def help_requests(admin: dict = Depends(require_admin)):
+    with appdb.connect() as conn:
+        rows = conn.execute(
+            "SELECT h.*, u.name, u.phone, r.pickup, r.dropoff, r.status FROM help_requests h "
+            "JOIN users u ON u.id = h.user_id JOIN rides r ON r.id = h.ride_id "
+            "ORDER BY h.created_at DESC LIMIT 50").fetchall()
+    return [help_view(dict(r)) for r in rows]
 
 
 def save_message(ride_id: int, sender: str, body: str) -> dict:

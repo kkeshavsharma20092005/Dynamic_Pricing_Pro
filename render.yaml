@@ -29,3 +29,13 @@ services:
       # Without it the app falls back to SQLite and loses every account on restart.
       - key: DATABASE_URL
         sync: false
+      # Email for "Forgot password?" codes. For Gmail: smtp.gmail.com, port 587, your
+      # address as SMTP_USER and an App Password (not your normal password) as SMTP_PASSWORD.
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_PORT
+        value: "587"
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASSWORD
+        sync: false

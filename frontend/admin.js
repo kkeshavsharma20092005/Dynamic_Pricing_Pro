@@ -345,6 +345,21 @@ async function refreshBusiness({ form = false } = {}) {
   if (form) renderBusinessForm();
 }
 
+// Help requests: user-written notes go in through el(), so they cannot inject markup.
+async function refreshHelp() {
+  const requests = await api("/admin/help");
+  fill($("help-table"), requests.length
+    ? [el("tr", {}, ["When", "Ride", "From", "Problem", "Details", "Status"].map(h => el("th", {}, h))),
+       ...requests.map(h => el("tr", { class: h.topic === "safety" ? "help-urgent" : "" },
+         el("td", {}, new Date(h.created_at * 1000).toLocaleString("en-IN")),
+         el("td", {}, `#${h.ride_id} · ${h.route}`),
+         el("td", {}, `${h.name} (${h.role}) `, el("a", { href: `tel:+91${h.phone}` }, `+91 ${h.phone}`)),
+         el("td", {}, el("strong", {}, h.topic_label)),
+         el("td", {}, h.note || "—"),
+         el("td", {}, h.ride_status)))]
+    : el("tr", {}, el("td", { class: "muted" }, "No help requests yet.")));
+}
+
 async function start() {
   hideAuth();
   $("app").classList.remove("hidden");
@@ -357,8 +372,13 @@ async function start() {
   await refreshStats();
   await refreshBusiness({ form: true });
   await renderSimulation();
+  await refreshHelp();
   connectLive(event => {
     if (event.type === "ride") { refreshStats().catch(() => {}); refreshBusiness().catch(() => {}); }
+    if (event.type === "help") {
+      toast(`🆘 ${event.help.topic_label}: ${event.help.name} (${event.help.role}), ride #${event.help.ride_id}`);
+      refreshHelp().catch(() => {});
+    }
   });
 }
 

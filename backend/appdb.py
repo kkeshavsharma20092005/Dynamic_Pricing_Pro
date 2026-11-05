@@ -43,6 +43,7 @@ CREATE TABLE IF NOT EXISTS users (
     name TEXT NOT NULL,
     role TEXT NOT NULL CHECK (role IN ('rider', 'driver', 'admin')),
     vehicle TEXT,
+    email TEXT,
     password_hash TEXT NOT NULL,
     salt TEXT NOT NULL,
     created_at REAL NOT NULL,
@@ -76,6 +77,24 @@ CREATE TABLE IF NOT EXISTS messages (
     created_at REAL NOT NULL
 );
 CREATE INDEX IF NOT EXISTS messages_ride ON messages(ride_id);
+CREATE TABLE IF NOT EXISTS password_resets (
+    user_id INTEGER NOT NULL UNIQUE REFERENCES users(id),
+    code_hash TEXT NOT NULL,
+    salt TEXT NOT NULL,
+    expires_at REAL NOT NULL,
+    attempts INTEGER NOT NULL,
+    sent_at REAL NOT NULL
+);
+CREATE TABLE IF NOT EXISTS help_requests (
+    id INTEGER PRIMARY KEY,
+    ride_id INTEGER NOT NULL REFERENCES rides(id),
+    user_id INTEGER NOT NULL REFERENCES users(id),
+    role TEXT NOT NULL,
+    topic TEXT NOT NULL,
+    note TEXT NOT NULL,
+    created_at REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS help_ride ON help_requests(ride_id);
 CREATE TABLE IF NOT EXISTS settings (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
@@ -190,10 +209,15 @@ def init_db():
             for statement in PG_SCHEMA.split(";"):
                 if statement.strip():
                     conn.execute(statement)
+            # Databases created before accounts had an email address.
+            conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS email TEXT")
         return
     migrate_users_to_per_role_accounts()
     with connect() as conn:
         conn.executescript(SCHEMA)
+        columns = {row["name"] for row in conn.execute("PRAGMA table_info(users)").fetchall()}
+        if "email" not in columns:
+            conn.execute("ALTER TABLE users ADD COLUMN email TEXT")
 
 
 def backend_name() -> str:
@@ -204,14 +228,58 @@ def hash_password(password: str, salt: str) -> str:
     return hashlib.pbkdf2_hmac("sha256", password.encode(), bytes.fromhex(salt), PBKDF2_ROUNDS).hex()
 
 
-def create_user(phone, name, role, password, vehicle=None) -> int:
+def create_user(phone, name, role, password, vehicle=None, email=None) -> int:
     salt = secrets.token_hex(16)
     with connect() as conn:
         cursor = conn.execute(
-            "INSERT INTO users (phone, name, role, vehicle, password_hash, salt, created_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (phone, name, role, vehicle, hash_password(password, salt), salt, time.time()))
+            "INSERT INTO users (phone, name, role, vehicle, email, password_hash, salt, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (phone, name, role, vehicle, email, hash_password(password, salt), salt, time.time()))
         return cursor.lastrowid
+
+
+def find_user(phone, role):
+    with connect() as conn:
+        row = conn.execute("SELECT * FROM users WHERE phone = ? AND role = ?", (phone, role)).fetchone()
+    return dict(row) if row else None
+
+
+def set_password(user_id, password):
+    salt = secrets.token_hex(16)
+    with connect() as conn:
+        conn.execute("UPDATE users SET password_hash = ?, salt = ? WHERE id = ?",
+                     (hash_password(password, salt), salt, user_id))
+
+
+# Password reset codes. Only a salted hash of the code is stored, never the code itself.
+def save_reset_code(user_id, code, expires_at):
+    salt = secrets.token_hex(16)
+    with connect() as conn:
+        conn.execute(
+            "INSERT INTO password_resets (user_id, code_hash, salt, expires_at, attempts, sent_at) "
+            "VALUES (?, ?, ?, ?, 0, ?) ON CONFLICT(user_id) DO UPDATE SET code_hash = excluded.code_hash, "
+            "salt = excluded.salt, expires_at = excluded.expires_at, attempts = 0, sent_at = excluded.sent_at",
+            (user_id, hash_password(code, salt), salt, expires_at, time.time()))
+
+
+def get_reset(user_id):
+    with connect() as conn:
+        row = conn.execute("SELECT * FROM password_resets WHERE user_id = ?", (user_id,)).fetchone()
+    return dict(row) if row else None
+
+
+def reset_code_matches(reset: dict, code: str) -> bool:
+    return hmac.compare_digest(reset["code_hash"], hash_password(code, reset["salt"]))
+
+
+def count_reset_attempt(user_id):
+    with connect() as conn:
+        conn.execute("UPDATE password_resets SET attempts = attempts + 1 WHERE user_id = ?", (user_id,))
+
+
+def delete_reset(user_id):
+    with connect() as conn:
+        conn.execute("DELETE FROM password_resets WHERE user_id = ?", (user_id,))
 
 
 def verify_user(phone, password, role):
@@ -244,16 +312,28 @@ def set_setting(key, value):
             (key, json.dumps(value)))
 
 
+DEFAULT_ADMIN_PHONE = "6006083467"
+
+
 def ensure_admin() -> str | None:
     """
-    Create the admin account if missing. There is no default password in the code: it
-    comes from ADMIN_PASSWORD, or is generated and returned for one-time display.
+    Make the admin account match ADMIN_PHONE and ADMIN_PASSWORD on every start, so changing
+    either setting changes the login. There is no password in the code: without
+    ADMIN_PASSWORD a new admin gets a generated one, returned for one-time display.
     """
-    phone = os.environ.get("ADMIN_PHONE", "9000000000")
+    phone = os.environ.get("ADMIN_PHONE", DEFAULT_ADMIN_PHONE)
+    wanted = os.environ.get("ADMIN_PASSWORD")
     with connect() as conn:
-        exists = conn.execute("SELECT 1 FROM users WHERE phone = ? AND role = 'admin'", (phone,)).fetchone()
-    if exists:
-        return None
-    password = os.environ.get("ADMIN_PASSWORD") or secrets.token_urlsafe(9)
-    create_user(phone, "Admin", "admin", password)
-    return None if os.environ.get("ADMIN_PASSWORD") else f"{phone} / {password}"
+        admin = conn.execute("SELECT * FROM users WHERE phone = ? AND role = 'admin'", (phone,)).fetchone()
+        if admin is None:
+            # A new ADMIN_PHONE moves the existing admin account to it instead of adding a second admin.
+            admin = conn.execute("SELECT * FROM users WHERE role = 'admin' ORDER BY id LIMIT 1").fetchone()
+            if admin is not None:
+                conn.execute("UPDATE users SET phone = ? WHERE id = ?", (phone, admin["id"]))
+    if admin is None:
+        password = wanted or secrets.token_urlsafe(9)
+        create_user(phone, "Admin", "admin", password)
+        return None if wanted else f"{phone} / {password}"
+    if wanted and not hmac.compare_digest(admin["password_hash"], hash_password(wanted, admin["salt"])):
+        set_password(admin["id"], wanted)
+    return None

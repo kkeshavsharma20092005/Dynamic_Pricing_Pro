@@ -1,10 +1,13 @@
 """End-to-end ride flows against the real app, using a throwaway database."""
+import re
 import sqlite3
 import sys
 import time
 import unittest
 from pathlib import Path
 from unittest import mock
+
+import mailer
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "backend"))
@@ -70,13 +73,27 @@ class RideAppTests(unittest.TestCase):
                                    json={"base": base, "per_km": per_km})
         self.assertEqual(response.status_code, 200, response.text)
 
-    def account(self, role="rider", vehicle=None):
+    def account(self, role="rider", vehicle=None, email="test@example.com"):
         _next_phone[0] += 1
+        phone = str(_next_phone[0])
         response = self.client.post("/api/register", json={
-            "phone": str(_next_phone[0]), "name": f"Test {role}", "password": "password123",
-            "role": role, "vehicle": vehicle})
+            "phone": phone, "name": f"Test {role}", "password": "password123",
+            "role": role, "vehicle": vehicle, "email": email})
+        self.assertEqual(response.status_code, 200, response.text)
+        return self.login(phone, "password123", role)
+
+    def login(self, phone, password, role="rider"):
+        response = self.client.post("/api/login", json={"phone": phone, "password": password, "role": role})
         self.assertEqual(response.status_code, 200, response.text)
         return {"Authorization": "Bearer " + response.json()["token"]}
+
+    def emailed_code(self, phone, role="rider"):
+        """Ask for a reset code and return it, reading the email the app would send."""
+        sent = []
+        with mock.patch.object(mailer, "send", lambda to, subject, body: sent.append((to, body))):
+            response = self.client.post("/api/password/forgot", json={"phone": phone, "role": role})
+        self.assertEqual(response.status_code, 200, response.text)
+        return sent
 
     def quote(self, headers, pickup=JAMMU, dropoff=GANDHI_NAGAR):
         return self.client.post("/api/quote", headers=headers, json={"pickup": pickup, "dropoff": dropoff})
@@ -125,11 +142,79 @@ class RideAppTests(unittest.TestCase):
     # ---------------------------------------------------------------- accounts
     def test_wrong_password_and_bad_phone_are_rejected(self):
         self.assertEqual(self.client.post("/api/login", json={"phone": "9000000001", "password": "nope", "role": "admin"}).status_code, 401)
-        bad = self.client.post("/api/register", json={"phone": "123", "name": "Xy", "password": "password123"})
+        bad = self.client.post("/api/register", json={"phone": "123", "name": "Xy", "password": "password123", "email": "a@b.co"})
         self.assertEqual(bad.status_code, 422)
 
+    def test_signing_up_does_not_log_in(self):
+        response = self.client.post("/api/register", json={
+            "phone": "9444444441", "name": "New Rider", "password": "password123", "email": "New.Rider@Gmail.com"})
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertNotIn("token", response.json())
+        self.assertEqual(response.json()["user"]["email"], "new.rider@gmail.com")
+        self.assertEqual(self.client.get("/api/me", headers=self.login("9444444441", "password123"))
+                         .json()["phone"], "9444444441")
+
+    def test_sign_up_needs_a_valid_email(self):
+        body = {"phone": "9444444442", "name": "No Mail", "password": "password123"}
+        self.assertEqual(self.client.post("/api/register", json=body).status_code, 422)
+        self.assertEqual(self.client.post("/api/register", json={**body, "email": "not-an-email"}).status_code, 422)
+
+    def test_forgot_password_emails_a_code_that_sets_a_new_password(self):
+        self.client.post("/api/register", json={
+            "phone": "9444444443", "name": "Forgetful", "password": "password123", "email": "forgetful@gmail.com"})
+        old_session = self.login("9444444443", "password123")
+        sent = self.emailed_code("9444444443")
+        self.assertEqual(len(sent), 1)
+        self.assertEqual(sent[0][0], "forgetful@gmail.com")
+        code = re.search(r"\b(\d{6})\b", sent[0][1]).group(1)
+
+        wrong = "000000" if code != "000000" else "111111"
+        reset = lambda c: self.client.post("/api/password/reset", json={
+            "phone": "9444444443", "code": c, "password": "brand-new-pass"})
+        self.assertEqual(reset(wrong).status_code, 400)
+        self.assertEqual(reset(code).status_code, 200)
+        self.assertEqual(reset(code).status_code, 400, "a code works only once")
+
+        self.assertEqual(self.client.post("/api/login", json={"phone": "9444444443", "password": "password123"}).status_code, 401)
+        self.login("9444444443", "brand-new-pass")
+        self.assertEqual(self.client.get("/api/me", headers=old_session).status_code, 401,
+                         "changing the password signs out older sessions")
+
+    def test_reset_code_is_locked_after_five_wrong_guesses(self):
+        self.client.post("/api/register", json={
+            "phone": "9444444444", "name": "Guessed", "password": "password123", "email": "g@example.com"})
+        code = re.search(r"\b(\d{6})\b", self.emailed_code("9444444444")[0][1]).group(1)
+        wrong = "000000" if code != "000000" else "111111"
+        for _ in range(5):
+            self.client.post("/api/password/reset", json={"phone": "9444444444", "code": wrong, "password": "whatever123"})
+        response = self.client.post("/api/password/reset", json={"phone": "9444444444", "code": code, "password": "whatever123"})
+        self.assertEqual(response.status_code, 400)
+
+    def test_forgot_password_does_not_reveal_who_has_an_account(self):
+        unknown = self.emailed_code("9444444449")
+        self.assertEqual(unknown, [])
+        known = self.client.post("/api/password/forgot", json={"phone": "9444444449", "role": "rider"})
+        self.client.post("/api/register", json={
+            "phone": "9444444445", "name": "Known", "password": "password123", "email": "k@example.com"})
+        with mock.patch.object(mailer, "send", lambda *a: None):
+            exists = self.client.post("/api/password/forgot", json={"phone": "9444444445", "role": "rider"})
+        self.assertEqual(known.json(), exists.json())
+
+    def test_admin_login_follows_admin_phone_and_password_settings(self):
+        with mock.patch.dict("os.environ", {"ADMIN_PHONE": "6000000009", "ADMIN_PASSWORD": "moved-pass-1"}):
+            appdb.ensure_admin()
+            self.login("6000000009", "moved-pass-1", "admin")
+            self.assertEqual(self.client.post("/api/login", json={
+                "phone": "9000000001", "password": "admin-test-password", "role": "admin"}).status_code, 401)
+        appdb.ensure_admin()   # back to the test settings
+        # The password change signed out the shared admin session, so sign in again.
+        type(self).admin = self.login("9000000001", "admin-test-password", "admin")
+
+    def test_admin_password_cannot_be_reset_by_email(self):
+        self.assertEqual(self.emailed_code("9000000001", "admin"), [])
+
     def test_one_number_can_hold_separate_rider_and_driver_accounts(self):
-        body = {"phone": "9222222222", "name": "Both Roles", "password": "password123"}
+        body = {"phone": "9222222222", "name": "Both Roles", "password": "password123", "email": "both@example.com"}
         rider = self.client.post("/api/register", json={**body, "role": "rider"})
         driver = self.client.post("/api/register", json={**body, "role": "driver", "vehicle": "cab", "password": "different456"})
         self.assertEqual((rider.status_code, driver.status_code), (200, 200), driver.text)
@@ -143,7 +228,7 @@ class RideAppTests(unittest.TestCase):
 
     def test_nobody_can_register_as_admin(self):
         response = self.client.post("/api/register", json={
-            "phone": "9111111111", "name": "Sneaky", "password": "password123", "role": "admin"})
+            "phone": "9111111111", "name": "Sneaky", "password": "password123", "role": "admin", "email": "s@example.com"})
         self.assertEqual(response.status_code, 422)
 
     def test_passwords_are_not_stored_in_plain_text(self):
@@ -285,6 +370,28 @@ class RideAppTests(unittest.TestCase):
             self.client.post("/api/driver/state", headers=driver, json={"online": True, "lat": 32.72, "lon": 74.86})
             self.assertIn(driver_id, rides.hub.drivers)
         wait_for(lambda: driver_id in rides.hub.drivers, lambda online: not online, 5)
+
+    def test_rider_can_ask_for_help_during_a_ride_and_admin_sees_it(self):
+        rider = self.account()
+        ride = self.client.post("/api/rides", headers=rider, json={
+            "pickup": JAMMU, "dropoff": GANDHI_NAGAR, "vehicle": "auto"}).json()
+        stranger = self.account()
+        ask = lambda who, body: self.client.post(f"/api/rides/{ride['id']}/help", headers=who, json=body)
+        self.assertEqual(ask(stranger, {"topic": "safety"}).status_code, 404)
+        self.assertEqual(ask(rider, {"topic": "nonsense"}).status_code, 422)
+        self.assertEqual(ask(self.admin, {"topic": "safety"}).status_code, 403)
+        response = ask(rider, {"topic": "safety", "note": "Driver is speeding", "lat": 32.72, "lon": 74.85})
+        self.assertEqual(response.status_code, 200, response.text)
+
+        listed = self.client.get("/api/admin/help", headers=self.admin).json()
+        mine = next(h for h in listed if h["id"] == response.json()["id"])
+        self.assertEqual(mine["topic_label"], "I feel unsafe")
+        self.assertIn("Driver is speeding", mine["note"])
+        self.assertIn("32.72", mine["note"])
+        self.assertEqual(self.client.get("/api/admin/help", headers=rider).status_code, 403)
+
+        self.client.post(f"/api/rides/{ride['id']}/cancel", headers=rider)
+        self.assertEqual(ask(rider, {"topic": "other"}).status_code, 409)
 
     def test_only_participants_can_read_a_ride_chat(self):
         rider, stranger = self.account(), self.account()
