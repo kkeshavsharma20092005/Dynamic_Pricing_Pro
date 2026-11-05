@@ -5,6 +5,65 @@ const panel = () => $("panel");
 const VEHICLE_ICON = { bike: "🛵", erickshaw: "🛺", auto: "🛺", cab: "🚕", shared: "🚐" };
 const STEPS = ["searching", "accepted", "arrived", "in_progress", "completed"];
 
+// ---------- Women Raahi: women riders can ride with women drivers only, in a pink theme.
+// The choice is remembered on this device for this account until she turns it off.
+let me = null, womenMode = false;
+const womenKey = () => `raahi_women_raahi_${me.id}`;
+const canUseWomenMode = () => !!me && me.gender === "female";
+const isVerified = () => !!me && me.kyc === "approved";
+const isWomenMode = () => canUseWomenMode() && isVerified() && womenMode;   // chat.js reads this too
+
+// The first time she turns it on, she verifies her ID in a sheet over the dashboard.
+function openWomenKyc() {
+  const close = () => { sheet.remove(); renderBooking(); };
+  const sheet = el("div", { class: "gender-backdrop", onclick: event => { if (event.target === sheet) close(); } },
+    el("section", { class: "gender-sheet kyc-sheet", role: "dialog", "aria-modal": "true", "aria-label": t("Verify your ID for Women Raahi") },
+      el("button", { type: "button", class: "assistant-close kyc-close", "aria-label": t("Close"), onclick: close }, "×"),
+      kycPanel(me, saved => {
+        me = saved;
+        sheet.remove();
+        renderBooking();
+        kycThanks(me);
+      })));
+  document.body.append(sheet);
+  sheet.querySelector("select, button").focus();
+}
+
+function applyWomenMode() {
+  document.body.classList.toggle("women-mode", isWomenMode());
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.content = isWomenMode() ? "#ffe4ee" : "#ffffff";
+}
+
+function womenToggle() {
+  if (!canUseWomenMode()) return null;
+  const on = isWomenMode();
+  const subtitle = on ? "On: your rides go only to women drivers"
+    : me.kyc === "pending" ? "ID check pending. It turns on once approved."
+    : isVerified() ? "Tap to ride only with women drivers" : "Verify your ID once to turn this on";
+  return el("button", {
+    type: "button", id: "women-raahi", class: "women-toggle" + (on ? " on" : ""), "aria-pressed": String(on),
+    onclick: () => {
+      if (!isVerified()) {
+        if (me.kyc === "pending") toast(t("ID check pending. It turns on once approved."));
+        else openWomenKyc();
+        return;
+      }
+      womenMode = !womenMode;
+      localStorage.setItem(womenKey(), womenMode ? "1" : "0");
+      applyWomenMode();
+      toast(t(womenMode ? "Women Raahi is on" : "Women Raahi is off"));
+      renderBooking();
+    },
+  },
+    el("span", { class: "women-icon", "aria-hidden": "true" }, "🌸"),
+    el("span", { class: "women-text" }, el("strong", {}, t("Women Raahi")),
+      el("span", {}, t(subtitle))),
+    el("span", { class: "women-switch", "aria-hidden": "true" }));
+}
+
+const womenBadge = () => el("span", { class: "tag women" }, "🌸 " + t("Women Raahi") + " · " + t("Only women drivers"));
+
 // Pickup: a black dot with a white ring. Drop-off: a black square.
 const DROP_ICON = L.divIcon({ className: "pin-drop", iconSize: [16, 16] });
 function marker(key, point) {
@@ -120,6 +179,7 @@ function renderBooking() {
 
   const photo = dropoff && dropoff.name ? PHOTOS.find(p => p.place === dropoff.name) : null;
   fill(panel(),
+    womenToggle(),
     photo && photoBanner(photo),
     destinationScroller(),
     placeSelect("pickup-select", "Pickup", pickup, setPickup),
@@ -214,8 +274,8 @@ function renderOptions(results, error, animate = false) {
     el("div", { class: "muted" }, t("Demo payment: pay the driver directly")),
     el("button", { type: "button", id: "book", onclick: async () => {
       try {
-        showRide(await api("/rides", { method: "POST", body: { pickup, dropoff, vehicle: chosen } }));
-        toast(t("Finding a driver…"));
+        showRide(await api("/rides", { method: "POST", body: { pickup, dropoff, vehicle: chosen, women_only: isWomenMode() } }));
+        toast(t(isWomenMode() ? "Finding a woman driver…" : "Finding a driver…"));
       } catch (e) { error.textContent = e.message; }
     } }, `${t("Book")} · ${rupees(current.fare)}`));
 }
@@ -262,9 +322,11 @@ function showRide(next) {
   const driver = ride.driver;
   const photo = photoFor(ride.dropoff.name, ride.region);
 
+  const statusText = ride.women_only && ride.status === "searching" ? "Finding a woman driver…" : STATUS_TEXT[ride.status];
   fill(panel(),
     photoBanner(photo, ride.dropoff.name),
-    el("div", { class: "status" + (ride.status === "searching" ? " pulse" : ""), role: "status" }, t(STATUS_TEXT[ride.status])),
+    el("div", { class: "status" + (ride.status === "searching" ? " pulse" : ""), role: "status" }, t(statusText)),
+    ride.women_only && womenBadge(),
     ride.status !== "cancelled" && stepper(ride.status),
     ride.status === "in_progress" && el("div", {},
       el("div", { class: "progress" }, el("div", { id: "trip-bar", class: "progress-bar" })),
@@ -273,7 +335,9 @@ function showRide(next) {
     el("div", { class: "muted" }, `${ride.km} km · ${rupees(ride.fare)} · ${VEHICLE_ICON[ride.vehicle]} ${ride.quote.label}`),
     driver && el("div", { class: "row driver-card" },
       el("div", {}, el("strong", {}, driver.name), " ",
-        driver.simulated && el("span", { class: "tag" }, t("Demo driver"))),
+        driver.simulated && el("span", { class: "tag" }, t("Demo driver")),
+        driver.plate && el("div", { class: "plate-row" }, el("span", { class: "plate", "aria-label": `${t("Vehicle number plate")} ${driver.plate}` }, driver.plate),
+          !finished && el("span", { class: "muted" }, t("Check the number plate before you get in")))),
       !finished && (driver.phone
         ? el("a", { href: `tel:+91${driver.phone}` }, el("button", { type: "button", class: "secondary" }, t("Call")))
         : el("button", { type: "button", class: "secondary", onclick: () => toast(t("Calling is simulated for demo drivers.")) }, t("Call")))),
@@ -319,6 +383,13 @@ function onLive(event) {
     api("/rides/active").then(active => { if (active) showRide(active); }).catch(() => {});
   } else if (event.type === "ride") {
     if (!ride || ride.id === event.ride.id) showRide(event.ride);
+  } else if (event.type === "kyc") {
+    me = event.user;
+    // Approval turns Women Raahi on: that is what she was verifying for.
+    if (me.kyc === "approved") { womenMode = true; localStorage.setItem(womenKey(), "1"); }
+    applyWomenMode();
+    toast(t(me.kyc === "approved" ? "You are verified. Women Raahi is ready." : "Your ID check was not approved."));
+    if (!ride) renderBooking();
   } else if (event.type === "position" && ride && ride.id === event.ride_id) {
     moveDriver(event);
   } else if (event.type === "message" && ride && ride.id === event.message.ride_id && addMessage) {
@@ -343,7 +414,10 @@ function goBack(state) {
   }
 }
 
-async function start() {
+async function start(user) {
+  me = await askGender(user);
+  womenMode = localStorage.getItem(womenKey()) === "1";
+  applyWomenMode();
   hideAuth();
   goScreen("book", { replace: true });
   onBack(goBack);
@@ -364,7 +438,8 @@ async function start() {
   useAccount("rider");
   setupShell("Raahi");
   await loadPhotos();
-  if (await signedInUser("rider")) return start();
+  const signedIn = await signedInUser("rider");
+  if (signedIn) return start(signedIn);
   fill($("auth-form"));
   showAuthPhoto("bahu-fort");
   renderAuth($("auth-form"), "rider", start);

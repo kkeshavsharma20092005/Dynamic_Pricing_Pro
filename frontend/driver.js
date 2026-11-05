@@ -1,5 +1,5 @@
 let map, places = [], online = false, position = null, ride = null, offer = null, offerTimer = null;
-let addMessage = null, liveStarted = false, routeLine = null, self_marker = null;
+let addMessage = null, liveStarted = false, routeLine = null, self_marker = null, me = null;
 const panel = () => $("panel");
 
 function showPosition() {
@@ -16,6 +16,7 @@ async function sendState(nextOnline) {
 function render() {
   if (ride) return renderRide();
   if (offer) return renderOffer();
+  if (me.kyc !== "approved") return renderKyc();
   const error = el("div", { class: "error", role: "alert" });
   const select = el("select", { id: "start-place", onchange: async () => {
     const place = places.find(p => p.name === select.value);
@@ -29,6 +30,7 @@ function render() {
   fill(panel(),
     photoBanner(photoById("patnitop"), online ? "Ready for riders" : "Start your shift"),
     el("div", { class: "status" + (online ? " pulse" : ""), role: "status" }, online ? "You are online. Waiting for rides." : "You are offline."),
+    me.plate && el("div", { class: "plate-row" }, el("span", { class: "muted" }, "Your vehicle"), el("span", { class: "plate" }, me.plate)),
     el("div", {}, el("label", { htmlFor: "start-place" }, "Your location"), select),
     el("button", { type: "button", class: "secondary", onclick: () => {
       navigator.geolocation && navigator.geolocation.getCurrentPosition(p => {
@@ -43,6 +45,13 @@ function render() {
     error,
     el("h3", { class: "section" }, t("Your trips")), driverHistory(),
   );
+}
+
+// No ride offers until an admin has approved the driver's ID and licence.
+function renderKyc() {
+  fill(panel(),
+    photoBanner(photoById("patnitop"), "Get verified to drive"),
+    kycPanel(me, saved => { me = saved; render(); kycThanks(me); }));
 }
 
 function driverHistory() {
@@ -78,6 +87,7 @@ function renderOffer() {
   fill(panel(),
     photoBanner(photoFor(offer.ride.dropoff.name, offer.ride.region), offer.ride.dropoff.name),
     el("div", { class: "status pulse", role: "alert" }, "New ride request · ", count, "s"),
+    offer.ride.women_only && womenRideTag(),
     el("div", { class: "progress" }, bar),
     el("div", {}, `${offer.ride.pickup.name} → ${offer.ride.dropoff.name}`),
     el("div", { class: "muted" }, `${offer.ride.km} km · ${rupees(offer.ride.fare)} · ${offer.ride.quote.label}`),
@@ -86,6 +96,8 @@ function renderOffer() {
       el("button", { type: "button", onclick: () => answer("accept") }, "Accept")),
   );
 }
+
+const womenRideTag = () => el("span", { class: "tag women" }, "🌸 " + t("Women Raahi"));
 
 const NEXT_STEP = {
   accepted: ["arrived", "I have arrived"],
@@ -106,6 +118,7 @@ function renderRide() {
   fill(panel(),
     photoBanner(photoFor(ride.dropoff.name, ride.region), ride.dropoff.name),
     el("div", { class: "status", role: "status" }, t(STATUS_TEXT[ride.status])),
+    ride.women_only && womenRideTag(),
     el("div", {}, `${ride.pickup.name} → ${ride.dropoff.name}`),
     el("div", { class: "muted" }, `${ride.km} km · ${rupees(ride.fare)} · ${ride.quote.label}`),
     ride.rider && el("div", { class: "row", style: "align-items:center" },
@@ -155,10 +168,45 @@ function onLive(event) {
   } else if (event.type === "message" && ride && ride.id === event.message.ride_id && addMessage) {
     addMessage(event.message);
     if (event.message.sender !== "driver") toast("💬 " + event.message.body);
+  } else if (event.type === "kyc") {
+    me = event.user;
+    if (!ride && !offer) render();
+    if (me.kyc === "approved") welcomeApproved();
+    else toast(t("Your ID check was not approved."));
   }
 }
 
-async function start() {
+// ---------- the welcome after approval
+// Shown once per driver on this device: the moment the admin approves, or at the next login
+// if the app was closed then. The same news also goes out by email and SMS.
+const welcomedKey = () => `raahi_driver_welcomed_${me.id}`;
+
+function welcomeApproved() {
+  if (me.kyc !== "approved" || localStorage.getItem(welcomedKey())) return;
+  localStorage.setItem(welcomedKey(), "1");
+  const close = () => { sheet.remove(); removeEventListener("keydown", onKey); };
+  const onKey = event => { if (event.key === "Escape") close(); };
+  const go = el("button", { type: "button", onclick: close }, t("Start driving"));
+  const sheet = el("div", { class: "gender-backdrop", onclick: event => { if (event.target === sheet) close(); } },
+    el("section", { class: "gender-sheet stack kyc-thanks driver-welcome", role: "alertdialog", "aria-modal": "true",
+                    "aria-labelledby": "welcome-title", "aria-describedby": "welcome-body" },
+      el("div", { class: "welcome-badge", "aria-hidden": "true" }, "🎉"),
+      el("h2", { id: "welcome-title" }, t("Thank you for registering with Raahi")),
+      el("div", { id: "welcome-body", class: "stack" },
+        el("p", { class: "welcome-approved" }, "✓ ", t("You are approved as a Raahi driver.")),
+        el("p", {}, t("You can now drive with Raahi.")),
+        me.plate && el("div", { class: "plate-row", style: "justify-content:center" },
+          el("span", { class: "muted" }, t("Your vehicle")), el("span", { class: "plate" }, me.plate)),
+        el("p", { class: "muted" }, t("Choose your location and tap Go online to start getting rides.")),
+        me.email && el("p", { class: "muted" }, t("We have also sent this to"), " ", el("strong", {}, me.email))),
+      go));
+  addEventListener("keydown", onKey);
+  document.body.append(sheet);
+  go.focus();
+}
+
+async function start(user) {
+  me = await askGender(user);
   hideAuth();
   goScreen("waiting", { replace: true });
   onBack(goBack);
@@ -168,6 +216,7 @@ async function start() {
   map.invalidateSize();
   places = await api("/places");
   render();
+  welcomeApproved();     // approved while the app was closed
   if (!liveStarted) { liveStarted = true; connectLive(onLive); }
 }
 
@@ -182,7 +231,8 @@ const vehicleField = () => [{
   useAccount("driver");
   setupShell("Raahi Driver");
   await loadPhotos();
-  if (await signedInUser("driver")) return start();
+  const signedIn = await signedInUser("driver");
+  if (signedIn) return start(signedIn);
   fill($("auth-form"));
   showAuthPhoto("patnitop");
   renderAuth($("auth-form"), "driver", start, vehicleField);

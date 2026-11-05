@@ -18,6 +18,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 import appdb
+import kyc
 import rides
 from config import METRICS_JSON, MODEL_PKL, PRODUCTS
 from engine import PricingEngine
@@ -75,6 +76,7 @@ app.add_middleware(
 )
 
 app.include_router(rides.router)
+app.include_router(kyc.router)
 
 
 @app.post("/predict/", response_model=PredictResponse, tags=["pricing"])

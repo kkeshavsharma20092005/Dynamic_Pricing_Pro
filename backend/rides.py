@@ -42,6 +42,10 @@ OFFER_SECONDS = 15
 REAL_DRIVER_RADIUS_KM = 30.0
 SIM_NAMES = ["Rakesh Sharma", "Mohd Yousuf", "Bilal Ahmad", "Sunil Kumar", "Imran Lone",
              "Vikram Singh", "Tariq Mir", "Ajay Gupta", "Farooq Dar", "Ramesh Thakur"]
+# Women Raahi rides go only to women drivers, simulated ones included.
+SIM_WOMEN_NAMES = ["Priya Sharma", "Shazia Bhat", "Anjali Gupta", "Rubina Akhtar", "Neha Raina",
+                   "Saima Mir", "Pooja Thakur", "Nusrat Jan"]
+GENDERS = ("female", "male", "other", "unspecified")
 SIM_REPLIES = ["Ji, main aa raha hoon.", "2-3 minute mein pahunch raha hoon.",
                "Theek hai, pickup point par rukiye.", "Okay, noted."]
 ACTIVE = ("searching", "accepted", "arrived", "in_progress")
@@ -149,7 +153,15 @@ def require_admin(user: dict = Depends(current_user)) -> dict:
 
 
 def public_user(user: dict) -> dict:
-    return {k: user.get(k) for k in ("id", "phone", "name", "role", "vehicle", "email")}
+    view = {k: user.get(k) for k in ("id", "phone", "name", "role", "vehicle", "email", "gender", "kyc", "kyc_note")}
+    view["plate"] = show_plate(user.get("plate"))
+    return view
+
+
+def show_plate(plate):
+    """JK02AB1234 -> JK02 AB 1234, the way it is painted on the plate."""
+    match = re.fullmatch(r"([A-Z]{2}\d{1,2})([A-Z]{0,3})(\d{4})", plate or "")
+    return " ".join(part for part in match.groups() if part) if match else plate
 
 
 @router.post("/register")
@@ -184,6 +196,25 @@ def login(body: LoginBody):
 @router.get("/me")
 def me(user: dict = Depends(current_user)):
     return public_user(user)
+
+
+class GenderBody(BaseModel):
+    gender: str
+
+
+@router.post("/me/gender")
+def set_gender(body: GenderBody, user: dict = Depends(current_user)):
+    """
+    Asked once, after the first login. Only women drivers get Women Raahi rides, so it
+    cannot be switched here afterwards: a change goes through Raahi support.
+    """
+    if user["role"] == "admin":
+        raise HTTPException(403, "Admin accounts have no gender setting.")
+    if body.gender not in GENDERS:
+        raise HTTPException(422, "Choose one of the options.")
+    if not appdb.set_gender_once(user["id"], body.gender):
+        raise HTTPException(409, "Your gender is already saved. Contact Raahi support to change it.")
+    return public_user(appdb.get_user(user["id"]))
 
 
 # The answer is the same whether or not the number has an account, so this cannot be used
@@ -323,6 +354,16 @@ def nearby(lat: float, lon: float, user: dict = Depends(current_user)):
 # ------------------------------------------------------------------ rides
 class BookBody(QuoteBody):
     vehicle: str
+    women_only: bool = False
+
+
+def check_women_only(user: dict, women_only: bool):
+    if not women_only:
+        return
+    if user.get("gender") != "female":
+        raise HTTPException(403, "Women Raahi rides are for women riders.")
+    if user.get("kyc") != "approved":
+        raise HTTPException(403, "Verify your ID once to use Women Raahi.")
 
 
 def row_to_ride(row) -> dict:
@@ -330,6 +371,7 @@ def row_to_ride(row) -> dict:
     for key in ("pickup", "dropoff", "quote", "path"):
         ride[key] = json.loads(ride[key])
     ride["sim_driver"] = json.loads(ride["sim_driver"]) if ride["sim_driver"] else None
+    ride["women_only"] = bool(ride.get("women_only"))
     return ride
 
 
@@ -347,10 +389,11 @@ def ride_view(ride: dict, viewer: dict) -> dict:
         view["quote"] = {k: v for k, v in ride["quote"].items() if k != "business"}
     live = ride["status"] in ("accepted", "arrived", "in_progress")
     if ride["sim_driver"]:
-        view["driver"] = {"name": ride["sim_driver"]["name"], "simulated": True, "phone": None}
+        view["driver"] = {"name": ride["sim_driver"]["name"], "simulated": True, "phone": None,
+                          "plate": ride["sim_driver"].get("plate")}
     elif ride["driver_id"]:
         driver = appdb.get_user(ride["driver_id"])
-        view["driver"] = {"name": driver["name"], "simulated": False,
+        view["driver"] = {"name": driver["name"], "simulated": False, "plate": show_plate(driver.get("plate")),
                           "phone": driver["phone"] if live else None}
     else:
         view["driver"] = None
@@ -394,25 +437,26 @@ async def book(body: BookBody, user: dict = Depends(current_user)):
         raise HTTPException(403, "Only rider accounts can book.")
     if active_ride_for(user):
         raise HTTPException(409, "You already have an active ride.")
+    check_women_only(user, body.women_only)
 
     # Re-priced here: a client-supplied fare must never be trusted.
     quoted = build_quote(body)
     option = next((o for o in quoted["options"] if o["vehicle"] == body.vehicle), None)
     if option is None:
         raise HTTPException(422, "That vehicle is not available for this trip.")
-    ride = await create_ride(user, quoted, option)
+    ride = await create_ride(user, quoted, option, body.women_only)
     return ride_view(ride, user)
 
 
-async def create_ride(user: dict, quoted: dict, option: dict) -> dict:
+async def create_ride(user: dict, quoted: dict, option: dict, women_only: bool = False) -> dict:
     now = time.time()
     # Saved with the ride, so later edits to the assumptions never rewrite its economics.
     option = {**option, "business": business_assumptions()}
     with appdb.connect() as conn:
         ride_id = conn.execute(
-            "INSERT INTO rides (rider_id, status, pickup, dropoff, vehicle, region, km, minutes, "
-            "fare, quote, path, created_at, updated_at) VALUES (?, 'searching', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (user["id"], json.dumps(quoted["pickup"]), json.dumps(quoted["dropoff"]), option["vehicle"],
+            "INSERT INTO rides (rider_id, women_only, status, pickup, dropoff, vehicle, region, km, minutes, "
+            "fare, quote, path, created_at, updated_at) VALUES (?, ?, 'searching', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (user["id"], int(women_only), json.dumps(quoted["pickup"]), json.dumps(quoted["dropoff"]), option["vehicle"],
              quoted["region"], quoted["km"], quoted["minutes"], option["fare"], json.dumps(option),
              json.dumps(quoted["path"]), now, now)).lastrowid
 
@@ -467,6 +511,7 @@ async def dispatch(ride_id: int):
     candidates = sorted(
         (d for d in hub.drivers.values()
          if not d["busy"] and d["vehicle"] == ride["vehicle"]
+         and (not ride["women_only"] or d["gender"] == "female")
          and distance_km(ride["pickup"]["lat"], ride["pickup"]["lon"], d["lat"], d["lon"]) <= REAL_DRIVER_RADIUS_KM),
         key=lambda d: distance_km(ride["pickup"]["lat"], ride["pickup"]["lon"], d["lat"], d["lon"]))
 
@@ -518,7 +563,11 @@ async def run_simulated_trip(ride_id: int):
     rng = random.Random(ride_id)
     pickup = (ride["pickup"]["lat"], ride["pickup"]["lon"])
     start = (pickup[0] + rng.uniform(-.015, .015), pickup[1] + rng.uniform(-.015, .015))
-    sim_driver = {"name": rng.choice(SIM_NAMES), "start": start}
+    # A J&K-style plate, so the demo ride card looks like a real one.
+    plate = (f"{rng.choice(['JK01', 'JK02', 'JK21'])} {rng.choice('ABCDEFGHJKLMNPRSTUVWXYZ')}"
+             f"{rng.choice('ABCDEFGHJKLMNPRSTUVWXYZ')} {rng.randint(1000, 9999)}")
+    sim_driver = {"name": rng.choice(SIM_WOMEN_NAMES if ride["women_only"] else SIM_NAMES), "start": start,
+                  "plate": plate}
 
     ride = set_status(ride_id, "accepted", ("searching",), sim_driver=json.dumps(sim_driver))
     if ride is None:
@@ -564,12 +613,15 @@ async def driver_state(body: DriverState, user: dict = Depends(require_driver)):
     if not body.online:
         hub.drivers.pop(user["id"], None)
         return {"online": False}
+    if user.get("kyc") != "approved":
+        # Every driver's ID and licence are checked before their first ride.
+        raise HTTPException(403, "Your documents must be approved before you can go online.")
     if body.lat is None or body.lon is None:
         raise HTTPException(422, "Location is needed to go online.")
     if not in_service_area(body.lat, body.lon):
         raise HTTPException(422, "You are outside the Jammu & Kashmir service area.")
     ride = active_ride_for(user)
-    hub.drivers[user["id"]] = {"id": user["id"], "vehicle": user["vehicle"], "lat": body.lat,
+    hub.drivers[user["id"]] = {"id": user["id"], "vehicle": user["vehicle"], "gender": user.get("gender"), "lat": body.lat,
                                "lon": body.lon, "busy": ride is not None}
     if ride:
         await hub.to_ride(ride, {"type": "position", "ride_id": ride["id"], "lat": body.lat, "lon": body.lon})
@@ -585,6 +637,10 @@ def offer_for(ride_id: int, user: dict) -> dict:
 
 @router.post("/rides/{ride_id}/accept")
 async def accept(ride_id: int, user: dict = Depends(require_driver)):
+    # Offers only reach approved drivers, who are the only ones allowed online. This is a
+    # second lock, so no path lets an unchecked driver take a rider.
+    if user.get("kyc") != "approved":
+        raise HTTPException(403, "Your documents must be approved before you can accept rides.")
     offer = offer_for(ride_id, user)
     ride = set_status(ride_id, "accepted", ("searching",), driver_id=user["id"])
     if ride is None:
@@ -772,6 +828,7 @@ class ChatBody(BaseModel):
     message: str = Field("", max_length=500)
     location: Point | None = None     # the rider's position, when the app was asked for it
     target: str = "pickup"
+    women_only: bool = False          # the app is in Women Raahi mode
 
 
 def chat_point(name: str) -> dict:
@@ -1001,7 +1058,8 @@ async def chat_reply(body: ChatBody, user: dict) -> dict:
         option = next((o for o in quoted["options"] if o["vehicle"] == chat["vehicle"]), None)
         if option is None:
             return {"text": chatbot.say(lang, "not_offered", vehicle=chatbot.VEHICLE_NAMES[lang][chat["vehicle"]])}
-        created = await create_ride(user, quoted, option)
+        check_women_only(user, body.women_only)
+        created = await create_ride(user, quoted, option, body.women_only)
         text = chatbot.say(lang, "booked", fare=created["fare"], pickup=chat["pickup"]["name"], dropoff=chat["dropoff"]["name"])
         chat.update(pickup=None, dropoff=None, vehicle=None, asking=None)
         return {"text": text, "ride": ride_view(created, user)}

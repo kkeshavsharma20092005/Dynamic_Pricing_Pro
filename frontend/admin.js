@@ -72,7 +72,7 @@ async function refreshStats() {
     el("thead", {}, el("tr", {}, ["Trip", "Rider", "Driver", "Vehicle", "Status"].map(h => el("th", {}, h)),
       el("th", { class: "num" }, "Fare"), el("th", { class: "num" }, "Multiplier"))),
     el("tbody", {}, o.recent.map(r => el("tr", {},
-      el("td", {}, `${r.pickup.name} → ${r.dropoff.name}`),
+      el("td", {}, `${r.pickup.name} → ${r.dropoff.name}`, r.women_only && el("span", { class: "tag women", title: "Women Raahi: women drivers only" }, " 🌸 Women Raahi")),
       el("td", {}, r.rider ? r.rider.name : ""),
       el("td", {}, r.driver ? r.driver.name + (r.driver.simulated ? " (demo)" : "") : "—"),
       el("td", {}, r.quote.label),
@@ -360,6 +360,59 @@ async function refreshHelp() {
     : el("tr", {}, el("td", { class: "muted" }, "No help requests yet.")));
 }
 
+// ID checks. Names and notes go in through el(); images are only ever data:image URLs,
+// which the server checks on upload.
+const KYC_KIND = { driver: "Driver", women: "Women Raahi rider" };
+const GENDER_LABEL = { female: "Woman", male: "Man", other: "Other", unspecified: "Prefer not to say" };
+
+function kycCard(v) {
+  const error = el("div", { class: "error", role: "alert" });
+  const gender = el("select", { "aria-label": `Gender on ${v.name}'s document` },
+    [["", "Gender on the document…"], ["female", "Woman"], ["male", "Man"], ["other", "Other"]].map(([value, label]) =>
+      el("option", { value, selected: v.kind === "women" ? value === "female" : value === v.gender && value !== "" }, label)));
+  const note = el("input", { placeholder: "Reason, if rejecting (the person sees this)", maxLength: 300, "aria-label": "Reason for rejecting" });
+  const decide = async approve => {
+    error.textContent = "";
+    try {
+      await api(`/admin/verifications/${v.id}`, { method: "POST", body: { approve, gender: gender.value || null, note: note.value } });
+      toast(`${v.name}: ${approve ? "approved" : "rejected"}`);
+      await refreshKyc();
+    } catch (e) { error.textContent = e.message; }
+  };
+  const photo = (src, label) => src && el("figure", { class: "kyc-shot" },
+    el("img", { src, alt: `${label} from ${v.name}`, onclick: event => event.currentTarget.classList.toggle("zoom") }),
+    el("figcaption", { class: "muted" }, label));
+  return el("div", { class: "card stack" },
+    el("div", {}, el("strong", {}, v.name), " ", el("span", { class: v.kind === "women" ? "tag women" : "tag" }, KYC_KIND[v.kind] || v.kind)),
+    v.kind === "driver" && el("div", { class: "plate-row" }, el("span", { class: "muted" }, "Number plate"), el("span", { class: "plate" }, v.plate || "—"),
+      el("span", { class: "muted" }, "Must match the number on the RC.")),
+    el("div", { class: "muted" }, `+91 ${v.phone}${v.vehicle ? ` · ${v.vehicle}` : ""} · says: ${GENDER_LABEL[v.gender] || "not answered"} · ${v.document} · sent ${new Date(v.created_at * 1000).toLocaleString("en-IN")}`),
+    el("div", { class: "kyc-shots" }, photo(v.id_image, v.document), photo(v.licence_image, "Driving licence"), photo(v.rc_image, "RC (registration)"), photo(v.selfie, "Selfie")),
+    gender,
+    el("div", { class: "row" },
+      el("button", { type: "button", onclick: () => decide(true) }, "Approve"),
+      el("button", { type: "button", class: "danger", onclick: () => decide(false) }, "Reject")),
+    note, error);
+}
+
+async function refreshKyc() {
+  const data = await api("/admin/verifications");
+  fill($("kyc-pending"), data.pending.length ? data.pending.map(kycCard)
+    : el("div", { class: "card muted" }, "No ID checks waiting."));
+  const reviewed = data.reviewed.sort((a, b) => b.reviewed_at - a.reviewed_at);
+  fill($("kyc-reviewed"), reviewed.length
+    ? [el("tr", {}, ["Reviewed", "Name", "For", "Plate", "Document", "Result", "Note"].map(h => el("th", {}, h))),
+       ...reviewed.map(v => el("tr", {},
+         el("td", {}, new Date(v.reviewed_at * 1000).toLocaleString("en-IN")),
+         el("td", {}, v.name),
+         el("td", {}, KYC_KIND[v.kind] || v.kind),
+         el("td", {}, v.kind === "driver" ? v.plate || "—" : ""),
+         el("td", {}, v.document),
+         el("td", {}, el("span", { class: v.status === "approved" ? "tag good" : "tag warn" }, v.status === "approved" ? `Approved · ${GENDER_LABEL[v.gender] || ""}` : "Rejected")),
+         el("td", {}, v.note || "—")))]
+    : el("tr", {}, el("td", { class: "muted" }, "Nothing reviewed yet.")));
+}
+
 async function start() {
   hideAuth();
   $("app").classList.remove("hidden");
@@ -373,7 +426,12 @@ async function start() {
   await refreshBusiness({ form: true });
   await renderSimulation();
   await refreshHelp();
+  await refreshKyc();
   connectLive(event => {
+    if (event.type === "verification") {
+      toast(`🪪 New ID check: ${event.name} (${event.role})`);
+      refreshKyc().catch(() => {});
+    }
     if (event.type === "ride") { refreshStats().catch(() => {}); refreshBusiness().catch(() => {}); }
     if (event.type === "help") {
       toast(`🆘 ${event.help.topic_label}: ${event.help.name} (${event.help.role}), ride #${event.help.ride_id}`);
