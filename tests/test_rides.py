@@ -708,6 +708,69 @@ class RideAppTests(unittest.TestCase):
         overview = self.client.get("/api/admin/overview", headers=self.admin).json()
         self.assertGreaterEqual(overview["ratings"]["count"], 1)
 
+    def finished_ride(self, vehicle="bike"):
+        """A real driver takes a ride and drives it to the end. Returns (rider, driver, url, ride)."""
+        rider, driver = self.account(), self.driver(vehicle)
+        self.client.post("/api/driver/state", headers=driver, json={"online": True, "lat": 32.72, "lon": 74.86})
+        ride = self.book(rider, vehicle)
+        url = f"/api/rides/{ride['id']}"
+        wait_for(lambda: self.client.post(url + "/accept", headers=driver), lambda r: r.status_code == 200, 5)
+        for step in ("arrived", "in_progress"):
+            self.client.post(f"{url}/advance/{step}", headers=driver)
+        return rider, driver, url, ride
+
+    def test_rider_pays_by_scanning_the_qr_then_both_apps_move_on(self):
+        rider, driver, url, ride = self.finished_ride()
+        self.assertIsNone(self.client.get("/api/rides/active", headers=rider).json()["payment"])
+        self.client.post(f"{url}/advance/completed", headers=driver)
+        self.client.post("/api/driver/state", headers=driver, json={"online": False})
+
+        due = self.client.get("/api/rides", headers=rider).json()[0]["payment"]
+        self.assertEqual(due["status"], "due")
+        pay_path = due["pay_path"]
+        self.assertEqual(self.client.get("/api/rides", headers=driver).json()[0]["payment"]["pay_path"], pay_path)
+        admin_view = next(r for r in self.client.get("/api/admin/overview", headers=self.admin).json()["recent"] if r["id"] == ride["id"])
+        self.assertIsNone(admin_view["payment"]["pay_path"])   # the link is for the rider and driver only
+
+        qr = self.client.get(pay_path + "/qr.svg")
+        self.assertEqual(qr.status_code, 200)
+        self.assertIn("image/svg+xml", qr.headers["content-type"])
+        self.assertEqual(self.client.get(pay_path).status_code, 200)        # the page the QR opens
+        token = pay_path.rsplit("/", 1)[1]
+        details = self.client.get(f"/api/pay/{token}").json()
+        self.assertEqual((details["fare"], details["paid"], details["demo"]), (ride["fare"], False, True))
+
+        rider_token = rider["Authorization"].removeprefix("Bearer ")
+        with self.client.websocket_connect(f"/api/ws?token={rider_token}") as rider_ws:
+            paid = self.client.post(f"/api/pay/{token}")
+            self.assertEqual(paid.status_code, 200, paid.text)
+            self.assertTrue(paid.json()["paid"])
+            while (event := rider_ws.receive_json())["type"] != "paid":
+                pass
+        self.assertEqual(event["ride"]["payment"]["status"], "paid")
+        self.assertEqual(event["ride"]["payment"]["method"], "qr_demo")
+        self.assertIsNone(event["ride"]["payment"]["pay_path"])
+        # Scanning again just shows it is paid.
+        self.assertEqual(self.client.post(f"/api/pay/{token}").status_code, 200)
+        self.assertEqual(self.client.get("/api/rides", headers=driver).json()[0]["payment"]["status"], "paid")
+
+    def test_payment_waits_for_the_trip_to_end_and_bad_links_fail(self):
+        rider, driver, url, ride = self.finished_ride("auto")
+        token = self.client.get("/api/rides/active", headers=rider).json()
+        with appdb.connect() as conn:
+            token = conn.execute("SELECT pay_token FROM rides WHERE id = ?", (ride["id"],)).fetchone()["pay_token"]
+        self.assertEqual(self.client.post(f"/api/pay/{token}").status_code, 409)       # still on the trip
+        self.assertEqual(self.client.post("/api/pay/not-a-real-link").status_code, 404)
+        self.assertEqual(self.client.get("/pay/not-a-real-link/qr.svg").status_code, 404)
+        self.client.post(f"{url}/advance/completed", headers=driver)
+        self.client.post("/api/driver/state", headers=driver, json={"online": False})
+        self.assertEqual(self.client.post(url + "/cash", headers=rider).status_code, 403)
+        self.assertEqual(self.client.post(url + "/cash", headers=self.driver("auto")).status_code, 404)
+        cash = self.client.post(url + "/cash", headers=driver)
+        self.assertEqual(cash.status_code, 200, cash.text)
+        self.assertEqual(cash.json()["payment"]["method"], "cash")
+        self.assertTrue(self.client.get(f"/api/pay/{token}").json()["paid"])
+
     def test_driver_goes_offline_when_the_connection_drops(self):
         driver = self.driver()
         token = driver["Authorization"].removeprefix("Bearer ")

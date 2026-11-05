@@ -54,6 +54,12 @@ const STRINGS = {
     "Your ride is confirmed": "आपकी राइड पक्की हो गई", "accepted your ride and is on the way.": "ने आपकी राइड स्वीकार की है और आ रहे हैं।",
     "Call driver": "ड्राइवर को कॉल करें", "Got it": "ठीक है", "away": "दूर", "Trip": "यात्रा",
     "Fare": "किराया", "Distance": "दूरी", "Ride": "राइड",
+    "Payment received": "भुगतान मिल गया", "Cash": "नकद", "QR payment (demo)": "QR भुगतान (डेमो)", "Pay": "भुगतान करें",
+    "Demo": "डेमो", "QR code to pay for this ride": "इस राइड का भुगतान करने के लिए QR कोड",
+    "Scan with your phone camera or Google Lens to pay": "भुगतान के लिए फ़ोन कैमरा या Google Lens से स्कैन करें",
+    "Demo payment: no real money is charged.": "डेमो भुगतान: कोई असली पैसा नहीं कटता।",
+    "Open payment page": "भुगतान पेज खोलें", "Cash received": "नकद मिल गया",
+    "Thank you! Your ride is paid.": "धन्यवाद! आपकी राइड का भुगतान हो गया।", "Continue": "आगे बढ़ें",
     "How was your ride with": "आपकी राइड कैसी रही,", "Tap a star to rate": "रेटिंग देने के लिए स्टार दबाएं",
     "Terrible": "बहुत खराब", "Bad": "खराब", "Okay": "ठीक-ठाक", "Good": "अच्छी", "Excellent": "बहुत बढ़िया",
     "of 5 stars": "/ 5 स्टार", "Your rating": "आपकी रेटिंग", "Tell us more (optional)": "और बताएं (वैकल्पिक)",
@@ -738,4 +744,25 @@ function buildRideHelp() {
   }
 
   return { opener, close };
+}
+
+// ---------- paying for a finished trip (demo)
+// The QR opens Raahi's own payment page, not a UPI code, so scanning it never moves real money.
+function paymentCard(ride, { onCash } = {}) {
+  const p = ride.payment;
+  if (!p) return null;
+  if (p.status === "paid") {
+    return el("div", { class: "pay-card paid", role: "status" },
+      el("div", { class: "pay-tick", "aria-hidden": "true" }, "✓"),
+      el("div", {}, el("strong", {}, t("Payment received")),
+        el("div", { class: "muted" }, `${rupees(ride.fare)} · ${p.method === "cash" ? t("Cash") : t("QR payment (demo)")}`)));
+  }
+  if (!p.pay_path) return null;
+  return el("div", { class: "pay-card" },
+    el("div", { class: "pay-head" }, el("strong", {}, `${t("Pay")} ${rupees(ride.fare)}`), el("span", { class: "tag warn" }, t("Demo"))),
+    el("img", { class: "pay-qr", src: `${p.pay_path}/qr.svg`, alt: t("QR code to pay for this ride"), width: 200, height: 200 }),
+    el("div", { class: "pay-hint" }, t("Scan with your phone camera or Google Lens to pay")),
+    el("div", { class: "muted" }, t("Demo payment: no real money is charged.")),
+    el("a", { href: p.pay_path, target: "_blank", rel: "noopener", class: "linkish" }, t("Open payment page") + " ↗"),
+    onCash && el("button", { type: "button", class: "secondary", onclick: onCash }, "💵 " + t("Cash received")));
 }

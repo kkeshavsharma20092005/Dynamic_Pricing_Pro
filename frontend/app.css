@@ -490,3 +490,22 @@ body.women-mode .leaflet-tile-pane { filter: saturate(.45) brightness(1.05) cont
 .rated { display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: var(--fill); border-radius: var(--radius); }
 .stars-static { font-size: 18px; letter-spacing: 2px; color: #f5a623; }
 .confirm-plate { align-self: flex-start; margin-top: 2px; font-size: 14px; }
+
+/* ---------- paying for a trip (demo QR) ---------- */
+.pay-card { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 16px; text-align: center;
+            border: 2px solid var(--ink); border-radius: var(--radius); background: #fff; }
+.pay-head { display: flex; align-items: center; gap: 8px; font-size: 18px; }
+.pay-qr { width: 200px; height: 200px; padding: 6px; background: #fff; border: 1px solid var(--line); border-radius: 10px; }
+.pay-hint { font-weight: 600; }
+.pay-card.paid { flex-direction: row; justify-content: flex-start; text-align: left; border-color: var(--good); background: var(--accent-soft); }
+.pay-tick { flex: 0 0 40px; display: grid; place-items: center; height: 40px; border-radius: 50%;
+            font-weight: 800; color: #fff; background: var(--good); }
+.pay-page { background: var(--fill); }
+.pay-main { display: grid; place-items: start center; min-height: calc(100dvh - var(--topbar)); padding: 20px 14px; }
+.pay-sheet { max-height: none; }
+.demo-ribbon { align-self: center; padding: 4px 10px; border-radius: 99px; font-size: 11px; font-weight: 700;
+               letter-spacing: .04em; color: var(--warn); background: var(--warn-bg); }
+.pay-spinner { width: 56px; height: 56px; margin: 0 auto 10px; border-radius: 50%; border: 5px solid var(--fill-2);
+               border-top-color: var(--good); animation: pay-spin .8s linear infinite; }
+.confirm-check.pay-fail { background: var(--danger); box-shadow: 0 0 0 8px var(--danger-bg); }
+@keyframes pay-spin { to { transform: rotate(360deg); } }

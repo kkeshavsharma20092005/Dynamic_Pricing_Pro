@@ -59,6 +59,9 @@ CREATE TABLE IF NOT EXISTS rides (
     driver_id INTEGER REFERENCES users(id),
     sim_driver TEXT,
     women_only INTEGER NOT NULL DEFAULT 0,
+    pay_token TEXT,
+    paid_at REAL,
+    payment_method TEXT,
     status TEXT NOT NULL,
     pickup TEXT NOT NULL,
     dropoff TEXT NOT NULL,
@@ -241,6 +244,9 @@ ADDED_COLUMNS = [
     ("users", "plate", "TEXT"),
     ("verifications", "rc_image", "TEXT"),
     ("rides", "women_only", "INTEGER NOT NULL DEFAULT 0"),
+    ("rides", "pay_token", "TEXT"),
+    ("rides", "paid_at", "REAL"),
+    ("rides", "payment_method", "TEXT"),
 ]
 
 

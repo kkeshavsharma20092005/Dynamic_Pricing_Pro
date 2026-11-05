@@ -19,6 +19,7 @@ from fastapi.staticfiles import StaticFiles
 
 import appdb
 import kyc
+import payments
 import rides
 from config import METRICS_JSON, MODEL_PKL, PRODUCTS
 from engine import PricingEngine
@@ -77,6 +78,7 @@ app.add_middleware(
 
 app.include_router(rides.router)
 app.include_router(kyc.router)
+app.include_router(payments.router)
 
 
 @app.post("/predict/", response_model=PredictResponse, tags=["pricing"])
@@ -170,6 +172,11 @@ if FRONTEND.exists():
     @app.get("/admin", include_in_schema=False)
     def admin_app():
         return FileResponse(FRONTEND / "admin.html")
+
+    # Opened by scanning the QR code shown when a trip ends (see payments.py).
+    @app.get("/pay/{token}", include_in_schema=False)
+    def pay_page(token: str):
+        return FileResponse(FRONTEND / "pay.html")
 
     @app.get("/dashboard", include_in_schema=False)
     def dashboard():

@@ -392,7 +392,8 @@ def get_ride(ride_id: int) -> dict | None:
 
 def ride_view(ride: dict, viewer: dict) -> dict:
     """What this viewer may see. Phone numbers are shared only while a ride is live."""
-    view = {k: ride[k] for k in ride if k not in ("rider_id", "driver_id")}
+    view = {k: ride[k] for k in ride if k not in ("rider_id", "driver_id", "pay_token", "paid_at", "payment_method")}
+    view["payment"] = payment_view(ride, viewer)
     if viewer["role"] != "admin":
         # The commission and cost split is business data, for the admin only.
         view["quote"] = {k: v for k, v in ride["quote"].items() if k != "business"}
@@ -417,6 +418,19 @@ def ride_view(ride: dict, viewer: dict) -> dict:
         rider = appdb.get_user(ride["rider_id"])
         view["rider"] = {"name": rider["name"], "phone": rider["phone"] if live else None}
     return view
+
+
+def payment_view(ride: dict, viewer: dict) -> dict | None:
+    """
+    Paying comes after the trip. Only the rider and the driver get the payment link, which
+    is what the QR code opens. Rides from before payments were added are not tracked.
+    """
+    if ride["status"] != "completed" or not ride.get("pay_token"):
+        return None
+    paid = ride.get("paid_at") is not None
+    participant = viewer["id"] in (ride["rider_id"], ride["driver_id"])
+    return {"status": "paid" if paid else "due", "method": ride.get("payment_method"), "paid_at": ride.get("paid_at"),
+            "pay_path": f"/pay/{ride['pay_token']}" if participant and not paid else None}
 
 
 def to_pickup(ride: dict, start) -> dict:
@@ -482,9 +496,9 @@ async def create_ride(user: dict, quoted: dict, option: dict, women_only: bool =
     option = {**option, "business": business_assumptions()}
     with appdb.connect() as conn:
         ride_id = conn.execute(
-            "INSERT INTO rides (rider_id, women_only, status, pickup, dropoff, vehicle, region, km, minutes, "
-            "fare, quote, path, created_at, updated_at) VALUES (?, ?, 'searching', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (user["id"], int(women_only), json.dumps(quoted["pickup"]), json.dumps(quoted["dropoff"]), option["vehicle"],
+            "INSERT INTO rides (rider_id, women_only, pay_token, status, pickup, dropoff, vehicle, region, km, minutes, "
+            "fare, quote, path, created_at, updated_at) VALUES (?, ?, ?, 'searching', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (user["id"], int(women_only), secrets.token_urlsafe(16), json.dumps(quoted["pickup"]), json.dumps(quoted["dropoff"]), option["vehicle"],
              quoted["region"], quoted["km"], quoted["minutes"], option["fare"], json.dumps(option),
              json.dumps(quoted["path"]), now, now)).lastrowid
 

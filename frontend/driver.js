@@ -138,6 +138,9 @@ function renderRide() {
     ["accepted", "arrived"].includes(ride.status) && el("button", { type: "button", class: "danger", onclick: () =>
       api(`/rides/${ride.id}/cancel`, { method: "POST" }).then(r => { ride = r; render(); }).catch(e => toast(e.message)) }, t("Cancel ride")),
     !finished && chatArea,
+    // Show this QR to the rider to collect the fare, or take cash and tap "Cash received".
+    ride.status === "completed" && paymentCard(ride, { onCash: () =>
+      api(`/rides/${ride.id}/cash`, { method: "POST" }).then(r => { ride = r; toast(t("Payment received")); render(); }).catch(e => toast(e.message)) }),
     finished && el("button", { type: "button", onclick: backToWaiting }, "Back to waiting"),
   );
   if (!finished && !existing) addMessage = renderChat(chatArea, ride, "driver");
@@ -172,7 +175,12 @@ function onLive(event) {
   } else if (event.type === "offer_gone") {
     if (offer && offer.ride.id === event.ride_id) { offer = null; clearInterval(offerTimer); render(); }
   } else if (event.type === "ride") {
-    if (ride && ride.id === event.ride.id) { ride = event.ride; render(); }
+    if (ride && ride.id === event.ride.id) {
+      const justPaid = ride.payment && ride.payment.status === "due" && event.ride.payment && event.ride.payment.status === "paid";
+      ride = event.ride;
+      render();
+      if (justPaid) toast(`✓ ${t("Payment received")} · ${rupees(ride.fare)}`);
+    }
     if (offer && offer.ride.id === event.ride.id && event.ride.status !== "searching") { offer = null; clearInterval(offerTimer); render(); }
   } else if (event.type === "message" && ride && ride.id === event.message.ride_id && addMessage) {
     addMessage(event.message);
