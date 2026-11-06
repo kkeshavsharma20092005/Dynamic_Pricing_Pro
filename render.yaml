@@ -29,8 +29,14 @@ services:
       # Without it the app falls back to SQLite and loses every account on restart.
       - key: DATABASE_URL
         sync: false
-      # Email for "Forgot password?" codes. For Gmail: smtp.gmail.com, port 587, your
-      # address as SMTP_USER and an App Password (not your normal password) as SMTP_PASSWORD.
+      # Email (reset codes, ID-check results). The free plan blocks the SMTP ports, so
+      # send through Brevo's HTTP API: set BREVO_API_KEY and MAIL_FROM (a sender address
+      # verified in Brevo, e.g. "Raahi <yourname@gmail.com>"). The SMTP_* keys below only
+      # work on a paid instance and are ignored while BREVO_API_KEY is set.
+      - key: BREVO_API_KEY
+        sync: false
+      - key: MAIL_FROM
+        sync: false
       - key: SMTP_HOST
         sync: false
       - key: SMTP_PORT

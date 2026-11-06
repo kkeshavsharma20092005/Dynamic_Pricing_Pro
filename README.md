@@ -47,7 +47,19 @@ Codes last 15 minutes, work once, and lock after 5 wrong tries. The admin passwo
 email (set `ADMIN_PASSWORD` instead). Accounts created before this change have no email, so they
 cannot use it.
 
-To send the emails through Gmail, turn on 2-Step Verification for the sending Google account, create
+**On Render's free plan, use Brevo.** Render's free instances block the SMTP ports (25, 465, 587),
+so Gmail SMTP times out there. Brevo sends over HTTPS instead: make a free account at
+[brevo.com](https://www.brevo.com), verify your sender address (Senders & IP > Senders), create an
+API key (SMTP & API > API Keys), and set these in the Render dashboard:
+
+```bash
+BREVO_API_KEY=xkeysib-...
+MAIL_FROM="Raahi <yourname@gmail.com>"   # must be the address you verified in Brevo
+```
+
+When `BREVO_API_KEY` is set it is used and the `SMTP_*` settings are ignored.
+
+To send the emails through Gmail SMTP instead (fine locally or on a paid instance), turn on 2-Step Verification for the sending Google account, create
 an [App Password](https://myaccount.google.com/apppasswords), and set:
 
 ```bash
@@ -58,7 +70,7 @@ SMTP_PASSWORD=<16-character app password>
 MAIL_FROM="Raahi <yourname@gmail.com>"   # optional
 ```
 
-Without `SMTP_HOST` nothing is sent: the server prints each email, code included, to its log, so you
+Without `BREVO_API_KEY` or `SMTP_HOST` nothing is sent: the server prints each email, code included, to its log, so you
 can try the flow locally.
 
 ### Help during a ride

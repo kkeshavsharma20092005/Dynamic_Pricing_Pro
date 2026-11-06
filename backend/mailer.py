@@ -1,21 +1,37 @@
 """
-Outgoing email, for password reset codes.
+Outgoing email: password reset codes and ID-check results.
 
-Configured with environment variables. For Gmail, turn on 2-Step Verification for the
-sending account, create an App Password (Google Account > Security > App passwords), and set:
+Two ways to send, picked by environment variables:
 
-    SMTP_HOST=smtp.gmail.com
-    SMTP_PORT=587
-    SMTP_USER=yourname@gmail.com
-    SMTP_PASSWORD=<the 16-character app password>
-    MAIL_FROM=Raahi <yourname@gmail.com>     (optional; defaults to SMTP_USER)
+1. Brevo's HTTP API (use this on Render's free plan, which blocks the SMTP ports 25, 465
+   and 587). Make a free account at brevo.com, verify your sender address under
+   Senders & IP > Senders, create a key under SMTP & API > API Keys, and set:
 
-Without SMTP_HOST the app still runs: each email is printed to the server log instead, so
-password reset can be tried locally without an email account.
+       BREVO_API_KEY=xkeysib-...
+       MAIL_FROM=Raahi <yourname@gmail.com>     (must be the verified sender)
+
+2. SMTP, e.g. Gmail. Turn on 2-Step Verification for the sending account, create an
+   App Password (Google Account > Security > App passwords), and set:
+
+       SMTP_HOST=smtp.gmail.com
+       SMTP_PORT=587
+       SMTP_USER=yourname@gmail.com
+       SMTP_PASSWORD=<the 16-character app password>
+       MAIL_FROM=Raahi <yourname@gmail.com>     (optional; defaults to SMTP_USER)
+
+If BREVO_API_KEY is set it is used; otherwise SMTP. With neither, the app still runs: each
+email is printed to the server log instead, so password reset can be tried locally
+without an email account.
 """
+import json
 import os
 import smtplib
+import urllib.error
+import urllib.request
 from email.message import EmailMessage
+from email.utils import parseaddr
+
+BREVO_URL = "https://api.brevo.com/v3/smtp/email"
 
 
 class MailError(Exception):
@@ -23,15 +39,51 @@ class MailError(Exception):
 
 
 def configured() -> bool:
-    return bool(os.environ.get("SMTP_HOST"))
+    return bool(os.environ.get("BREVO_API_KEY") or os.environ.get("SMTP_HOST"))
 
 
 def send(to: str, subject: str, body: str) -> None:
-    if not configured():
-        print(f"[mail] SMTP_HOST is not set, so this email was not sent.\n"
+    if os.environ.get("BREVO_API_KEY"):
+        _send_brevo(to, subject, body)
+    elif os.environ.get("SMTP_HOST"):
+        _send_smtp(to, subject, body)
+    else:
+        print(f"[mail] Neither BREVO_API_KEY nor SMTP_HOST is set, so this email was not sent.\n"
               f"[mail] To: {to}\n[mail] Subject: {subject}\n{body}\n[mail] ---")
-        return
 
+
+def _send_brevo(to: str, subject: str, body: str) -> None:
+    name, address = parseaddr(os.environ.get("MAIL_FROM") or os.environ.get("SMTP_USER", ""))
+    if not address:
+        print("[mail] BREVO_API_KEY is set but MAIL_FROM is not, so there is no sender address.")
+        raise MailError("MAIL_FROM is not set")
+    sender = {"email": address}
+    if name:
+        sender["name"] = name
+    payload = json.dumps({
+        "sender": sender,
+        "to": [{"email": to}],
+        "subject": subject,
+        "textContent": body,
+    }).encode()
+    request = urllib.request.Request(BREVO_URL, data=payload, method="POST", headers={
+        "api-key": os.environ["BREVO_API_KEY"],
+        "content-type": "application/json",
+        "accept": "application/json",
+    })
+    try:
+        with urllib.request.urlopen(request, timeout=20):
+            pass
+    except urllib.error.HTTPError as e:
+        detail = e.read().decode(errors="replace")[:500]
+        print(f"[mail] sending to {to} through Brevo failed: HTTP {e.code} {detail}")
+        raise MailError(f"Brevo HTTP {e.code}") from e
+    except OSError as e:
+        print(f"[mail] sending to {to} through Brevo failed: {e}")
+        raise MailError(str(e)) from e
+
+
+def _send_smtp(to: str, subject: str, body: str) -> None:
     host = os.environ["SMTP_HOST"]
     port = int(os.environ.get("SMTP_PORT", "587"))
     user = os.environ.get("SMTP_USER", "")
