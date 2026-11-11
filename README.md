@@ -52,7 +52,6 @@ uvicorn backend.main:app --reload
 | Customer app | <http://127.0.0.1:8000/ride> | Sign up, then book a ride |
 | Driver app | <http://127.0.0.1:8000/driver> | Sign up, go online, accept rides |
 | Admin panel | <http://127.0.0.1:8000/admin> | Set conditions and limits, compare strategies |
-| Pricing dashboard | <http://127.0.0.1:8000/dashboard> | Explore the engine directly |
 | API docs | <http://127.0.0.1:8000/docs> | |
 
 Customer, driver and admin accounts are separate, each with its own password and login. One mobile
