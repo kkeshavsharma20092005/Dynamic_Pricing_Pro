@@ -1,5 +1,5 @@
 """
-Outgoing email: password reset codes and ID-check results.
+Outgoing email: welcome emails, ID-check updates and password reset codes.
 
 Two ways to send, picked by environment variables:
 
@@ -25,6 +25,7 @@ without an email account.
 """
 import json
 import os
+import re
 import smtplib
 import urllib.error
 import urllib.request
@@ -32,6 +33,7 @@ from email.message import EmailMessage
 from email.utils import parseaddr
 
 BREVO_URL = "https://api.brevo.com/v3/smtp/email"
+DEFAULT_NAME = "Raahi"
 
 
 class MailError(Exception):
@@ -40,6 +42,17 @@ class MailError(Exception):
 
 def configured() -> bool:
     return bool(os.environ.get("BREVO_API_KEY") or os.environ.get("SMTP_HOST"))
+
+
+def sender() -> tuple[str, str]:
+    """(name, address) from MAIL_FROM. Accepts "Raahi <a@b.com>", "Raahi a@b.com" or "a@b.com"."""
+    raw = (os.environ.get("MAIL_FROM") or os.environ.get("SMTP_USER") or "").strip()
+    name, address = parseaddr(raw)
+    if "<" not in raw:                        # no brackets: the address is the word with an @
+        found = re.search(r"[^\s<>]+@[^\s<>]+", raw)
+        address = found.group(0) if found else ""
+        name = raw.replace(address, "").strip()
+    return name.strip(' "') or DEFAULT_NAME, address
 
 
 def send(to: str, subject: str, body: str) -> None:
@@ -53,15 +66,12 @@ def send(to: str, subject: str, body: str) -> None:
 
 
 def _send_brevo(to: str, subject: str, body: str) -> None:
-    name, address = parseaddr(os.environ.get("MAIL_FROM") or os.environ.get("SMTP_USER", ""))
+    name, address = sender()
     if not address:
         print("[mail] BREVO_API_KEY is set but MAIL_FROM is not, so there is no sender address.")
         raise MailError("MAIL_FROM is not set")
-    sender = {"email": address}
-    if name:
-        sender["name"] = name
     payload = json.dumps({
-        "sender": sender,
+        "sender": {"name": name, "email": address},
         "to": [{"email": to}],
         "subject": subject,
         "textContent": body,
@@ -106,3 +116,13 @@ def _send_smtp(to: str, subject: str, body: str) -> None:
     except (smtplib.SMTPException, OSError) as e:
         print(f"[mail] sending to {to} failed: {e}")
         raise MailError(str(e)) from e
+
+
+def send_quietly(to: str | None, subject: str, body: str) -> None:
+    """For background notices: a failure is logged and dropped, never shown to the user."""
+    if not to:
+        return
+    try:
+        send(to, subject, body)
+    except MailError:
+        pass

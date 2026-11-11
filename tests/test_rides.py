@@ -550,11 +550,14 @@ class RideAppTests(unittest.TestCase):
         mails, texts = self.outbox()
         driver = self.account("driver", "cab", email="gauri@example.com")
         me = self.client.get("/api/me", headers=driver).json()
+        self.assertEqual([m[1] for m in mails], ["Welcome to Raahi: one step left before you can drive"])
         self.send_kyc(driver, plate="JK02 GT 7001")
-        self.assertEqual((mails, texts), ([], []))         # nothing is sent until the decision
+        self.assertEqual(mails[1][:2], ("gauri@example.com", "We have received your Raahi driver application"))
+        self.assertIn("JK02 GT 7001", mails[1][2])
+        self.assertEqual(texts, [])                         # no SMS until the decision
         self.review(driver, True, "female")
-        self.assertEqual(len(mails), 1)
-        to, subject, body = mails[0]
+        self.assertEqual(len(mails), 3)
+        to, subject, body = mails[2]
         self.assertEqual(to, "gauri@example.com")
         self.assertEqual(subject, "Verification completed: you can now drive with Raahi")
         self.assertIn("JK02 GT 7001", body)
@@ -567,15 +570,42 @@ class RideAppTests(unittest.TestCase):
         rider = self.gendered("female")
         self.send_kyc(rider)
         self.review(rider, False, note="The photo is blurry")
-        self.assertEqual(mails[0][1], "We could not verify your ID for Women Raahi")
-        self.assertIn("The photo is blurry", mails[0][2])
+        self.assertEqual(mails[-1][1], "We could not verify your ID for Women Raahi")
+        self.assertIn("The photo is blurry", mails[-1][2])
         self.assertIn("The photo is blurry", texts[0][1])
 
     def test_women_raahi_approval_message(self):
         mails, texts = self.outbox()
         rider = self.verify(self.gendered("female"), "female")
-        self.assertEqual(mails[0][1], "Women Raahi is ready for you")
+        self.assertEqual([m[1] for m in mails], ["Welcome to Raahi", "We have received your ID for Women Raahi",
+                                                 "Women Raahi is ready for you"])
         self.assertIn("women drivers", texts[0][1])
+
+    def test_new_rider_gets_a_welcome_email(self):
+        mails, _ = self.outbox()
+        self.account("rider", email="asha@example.com")
+        self.assertEqual(len(mails), 1)
+        self.assertEqual(mails[0][:2], ("asha@example.com", "Welcome to Raahi"))
+        self.assertIn("Hello Test", mails[0][2])
+
+    def test_rejected_driver_hears_why_by_email(self):
+        mails, _ = self.outbox()
+        driver = self.account("driver", "cab", email="dev@example.com")
+        self.send_kyc(driver)
+        self.review(driver, False, note="RC photo is cut off")
+        self.assertEqual([m[1] for m in mails], [
+            "Welcome to Raahi: one step left before you can drive",
+            "We have received your Raahi driver application",
+            "We could not approve your Raahi driver registration yet"])
+        self.assertIn("RC photo is cut off", mails[2][2])
+
+    def test_mail_failure_does_not_block_signup_or_documents(self):
+        def broken(*args):
+            raise mailer.MailError("server down")
+        with mock.patch.object(mailer, "send", broken):
+            driver = self.account("driver", "cab")
+            self.assertEqual(self.send_kyc(driver).status_code, 200)
+        self.assertEqual(self.client.get("/api/me", headers=driver).json()["kyc"], "pending")
 
     def test_mail_failure_does_not_block_the_review(self):
         def broken(*args):

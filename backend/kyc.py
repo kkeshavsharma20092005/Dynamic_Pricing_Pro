@@ -61,8 +61,23 @@ def kind_for(user: dict) -> str:
     raise HTTPException(403, "Admin accounts are not verified here.")
 
 
+def received_message(user: dict, kind: str) -> tuple[str, str]:
+    """(subject, body) of the email confirming the documents arrived and are waiting for review."""
+    first = user["name"].split()[0]
+    if kind == "driver":
+        return ("We have received your Raahi driver application",
+                f"Hello {first},\n\nThank you for applying to drive with Raahi. We have received your ID, "
+                f"driving licence, vehicle RC and selfie, and our team is now reviewing them.\n\n"
+                f"Vehicle: {show_plate(user.get('plate')) or 'as registered'}\n\n"
+                f"There is nothing more to do for now. We will email you as soon as your application is "
+                f"approved, or tell you what to fix if something is missing.\n\nTeam Raahi")
+    return ("We have received your ID for Women Raahi",
+            f"Hello {first},\n\nThank you for sending your ID for Women Raahi. Our team is now checking it, "
+            f"and we will email you as soon as it is done.\n\nTeam Raahi")
+
+
 @router.post("/kyc")
-async def submit(body: KycBody, user: dict = Depends(current_user)):
+async def submit(body: KycBody, background: BackgroundTasks, user: dict = Depends(current_user)):
     kind = kind_for(user)
     if user.get("kyc") == "pending":
         raise HTTPException(409, "Your documents are already being checked.")
@@ -94,7 +109,9 @@ async def submit(body: KycBody, user: dict = Depends(current_user)):
     appdb.save_verification(user["id"], kind, body.document, body.id_image, body.selfie, licence, plate, rc)
     for admin_id in list(hub.admins):
         await hub.send(admin_id, {"type": "verification", "name": user["name"], "role": user["role"]})
-    return public_user(appdb.get_user(user["id"]))
+    updated = appdb.get_user(user["id"])
+    background.add_task(mailer.send_quietly, updated.get("email"), *received_message(updated, kind))
+    return public_user(updated)
 
 
 def verification_view(row: dict, with_images: bool) -> dict:
@@ -128,7 +145,7 @@ def decision_messages(user: dict, kind: str, approved: bool, note: str | None) -
                 f"  1. Open the Raahi Driver app and log in.\n"
                 f"  2. Set your location and tap Go online.\n"
                 f"  3. Accept the ride requests you receive.\n\n"
-                f"Welcome aboard,\nRaahi",
+                f"Welcome aboard,\nTeam Raahi",
                 f"Raahi: {first}, your verification is completed. You can now go online, accept rides and "
                 f"drive with Raahi.")
     if kind == "driver":
@@ -155,11 +172,7 @@ def decision_messages(user: dict, kind: str, approved: bool, note: str | None) -
 def notify_decision(user: dict, kind: str, approved: bool, note: str | None):
     """Runs after the response: a slow or failing mail or SMS service never blocks the admin."""
     subject, body, text = decision_messages(user, kind, approved, note)
-    if user.get("email"):
-        try:
-            mailer.send(user["email"], subject, body)
-        except mailer.MailError:
-            pass        # already logged; the result is still in the app
+    mailer.send_quietly(user.get("email"), subject, body)     # a failure is logged; the result is still in the app
     try:
         sms.send(user["phone"], text)
     except sms.SmsError:

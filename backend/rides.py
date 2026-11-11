@@ -18,7 +18,7 @@ import time
 from datetime import datetime, timedelta, timezone
 
 import jwt
-from fastapi import APIRouter, Depends, Header, HTTPException, Query, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Query, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, Field
 
 import appdb
@@ -173,8 +173,24 @@ def show_plate(plate):
     return " ".join(part for part in match.groups() if part) if match else plate
 
 
+def welcome_message(name: str, role: str) -> tuple[str, str]:
+    """(subject, body) of the email a new account gets."""
+    first = name.split()[0]
+    if role == "driver":
+        return ("Welcome to Raahi: one step left before you can drive",
+                f"Hello {first},\n\nThank you for signing up to drive with Raahi. Your driver account "
+                f"is created.\n\nBefore you can take rides, we need to check your documents:\n"
+                f"  1. Open the Raahi Driver app and log in with your mobile number and password.\n"
+                f"  2. Upload your ID, driving licence, vehicle RC and a selfie.\n"
+                f"  3. We will email you as soon as our team has reviewed them.\n\n"
+                f"Welcome aboard,\nTeam Raahi")
+    return ("Welcome to Raahi",
+            f"Hello {first},\n\nWelcome to Raahi! Your account is ready. Log in with your mobile "
+            f"number and password to book your first ride.\n\nSafe travels,\nTeam Raahi")
+
+
 @router.post("/register")
-def register(body: RegisterBody):
+def register(body: RegisterBody, background: BackgroundTasks):
     if not re.fullmatch(r"[6-9]\d{9}", body.phone):
         raise HTTPException(422, "Enter a valid 10-digit mobile number.")
     if body.role not in ("rider", "driver"):
@@ -189,6 +205,7 @@ def register(body: RegisterBody):
                                     body.vehicle if body.role == "driver" else None, email)
     except appdb.IntegrityError:
         raise HTTPException(409, f"This number already has a {body.role} account.")
+    background.add_task(mailer.send_quietly, email, *welcome_message(body.name.strip(), body.role))
     # No session here: a new account logs in with its credentials like any other.
     return {"user": public_user(appdb.get_user(user_id)),
             "message": "Account created. Log in with your mobile number and password."}
