@@ -6,10 +6,29 @@ what it costs, a fair-price limit stops it rising too far during snow, storms an
 riders see how it compares with labelled estimates for other apps. A built-in assistant takes bookings
 in English, Hindi and Urdu.
 
-**Stack:** FastAPI · SQLite · WebSockets · Scikit-Learn · Pandas · Leaflet + OpenStreetMap · installable web app (PWA)
+**Live demo:** <https://raahi-jk.onrender.com> (a free server: the first visit can take about a minute to wake it)
+
+**Stack:** FastAPI · SQLite / PostgreSQL · WebSockets · Scikit-Learn · Pandas · Leaflet + OpenStreetMap · Brevo email · installable web app (PWA)
 
 **This is a college demo, not a live service.** All market data is synthetic, drivers are simulated
 unless a real driver account is online, and payment is demo-only.
+
+| Home page | Customer app | Pricing dashboard |
+|---|---|---|
+| ![Home page](docs/screenshots/home.jpg) | ![Customer app login](docs/screenshots/ride.jpg) | ![Pricing dashboard](docs/screenshots/dashboard.jpg) |
+
+## Highlights
+
+| | |
+|---|---|
+| **Women Raahi** | Verified women riders can choose rides that go only to verified women drivers. Gender comes from the ID document an admin checks, not a tick box. |
+| **Help during a ride** | A red Help button for rider and driver: one-tap 112, 108 and 1091, trip sharing, and a live alert to the admin panel. |
+| **Driver verification** | ID, driving licence, vehicle RC, number plate and a selfie, reviewed before a driver can go online. Photos are deleted after review. |
+| **Fair pricing** | A demand model and optimizer set the fare; a limit caps it, lower during snow, storms and closures. Every fare explains what raised it. |
+| **Built for J&K** | Regional weather, road closures, yatra seasons, shared cabs, ~16,800 bookable J&K places, and an offline app shell for weak networks. |
+| **Booking assistant** | Books by text or voice in English, Hindi and Urdu, and only after the rider says yes. |
+| **Email updates** | Welcome emails, "application received" and approval or rejection emails for drivers, and password reset codes. |
+| **Tested** | 140+ automated tests run the real app end to end against a throwaway database. |
 
 ---
 
@@ -72,6 +91,32 @@ MAIL_FROM="Raahi <yourname@gmail.com>"   # optional
 
 Without `BREVO_API_KEY` or `SMTP_HOST` nothing is sent: the server prints each email, code included, to its log, so you
 can try the flow locally.
+
+### Emails the app sends
+
+| When | Who | Email |
+|---|---|---|
+| An account is created | Rider or driver | Welcome. Drivers are told to upload their documents next |
+| Documents are uploaded | Driver, or a woman rider for Women Raahi | "We have received your application", while the team reviews it |
+| An admin approves or rejects | The same person | The result, with the reason for a rejection (also sent by SMS when SMS is set up) |
+| **Forgot password?** | Anyone with an email on their account | A 6-digit code |
+
+Each email goes out as plain text and as HTML under a Raahi header with the logo. The logo loads from
+the app itself, at `PUBLIC_URL`, or on Render at the `RENDER_EXTERNAL_URL` Render sets by itself.
+Sending never blocks the request: if the mail service is down, signup, document upload and reviews
+still work, and the failure is logged as a `[mail]` line.
+
+### Women Raahi and driver verification
+
+Every driver must pass an ID check before going online: an ID document, driving licence, vehicle RC,
+number plate and a selfie. An admin compares them by eye in the admin panel and approves or rejects
+with a reason. Approval records the gender printed on the document, and the photos are deleted as soon
+as the review is done.
+
+Women riders can turn on **Women Raahi** (the pink button in the customer app) after the same ID
+check. Their rides then go only to drivers verified as women, and the app switches to a pink theme.
+Because gender comes from the checked document, nobody can pick "woman" to get these rides. A real
+launch would use DigiLocker or a licensed KYC provider instead of the admin's review.
 
 ### Help during a ride
 
@@ -292,7 +337,8 @@ tests/              unit, API and end-to-end ride tests
 
 `render.yaml` deploys the Docker image to Render. Set `ADMIN_PASSWORD` in the Render dashboard.
 
-- **Data does not survive there.** Render's free disk is wiped on restart, so accounts and rides reset. Fine for a demo; a real service would need a hosted database.
+- **Set `DATABASE_URL`, or data does not survive.** Render's free disk is wiped on every deploy and every time the service sleeps, so without a hosted PostgreSQL database (a free [Neon](https://neon.tech) project works) accounts and rides reset. See [Accounts that survive restarts](#accounts-that-survive-restarts-postgresql).
+- **Email:** set `BREVO_API_KEY` and `MAIL_FROM` (see [Forgot password](#forgot-password-email-codes)). The free plan blocks SMTP.
 - **Don't use `vercel.json` for this app.** Vercel's serverless functions don't suit the WebSockets and running trips the ride app depends on.
 - The model is committed, and `scikit-learn` is pinned to the version that saved it.
 
