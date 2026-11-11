@@ -34,9 +34,27 @@ class MailerTests(unittest.TestCase):
         self.assertEqual(request.full_url, "https://api.brevo.com/v3/smtp/email")
         self.assertEqual(request.get_method(), "POST")
         self.assertEqual(request.get_header("Api-key"), "test-key")
-        self.assertEqual(json.loads(request.data), {
+        sent = json.loads(request.data)
+        html = sent.pop("htmlContent")
+        self.assertEqual(sent, {
             "sender": {"name": "Raahi", "email": "raahi@example.com"},
             "to": [{"email": "asha@example.com"}], "subject": "Welcome", "textContent": "Hello"})
+        self.assertIn("Hello", html)
+
+    def test_html_version_has_the_logo_and_escapes_the_text(self):
+        self.env({"RENDER_EXTERNAL_URL": "https://raahi-jk.onrender.com"})
+        page = mailer.html_body("Hi", "Hello <b>Asha</b>,\nline two\n\nTeam Raahi")
+        self.assertIn('src="https://raahi-jk.onrender.com/static/icons/icon-192.png"', page)
+        self.assertIn("Hello &lt;b&gt;Asha&lt;/b&gt;,<br>line two</p>", page)
+        self.assertIn("<p style=\"margin:0 0 16px;\">Team Raahi</p>", page)
+        self.env({"PUBLIC_URL": "https://raahi.example/"})
+        self.assertIn('src="https://raahi.example/static/icons/icon-192.png"', mailer.html_body("s", "b"))
+
+    def test_without_a_public_address_the_header_has_no_image(self):
+        self.env({})
+        self.assertNotIn("<img", mailer.html_body("s", "b"))
+        self.env({"PUBLIC_URL": "http://localhost:8000"})     # a phone or inbox cannot load this
+        self.assertNotIn("<img", mailer.html_body("s", "b"))
 
     def test_brevo_wins_over_smtp(self):
         self.env({**BREVO, "SMTP_HOST": "smtp.example.com"})
