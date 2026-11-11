@@ -13,9 +13,12 @@ in English, Hindi and Urdu.
 **This is a college demo, not a live service.** All market data is synthetic, drivers are simulated
 unless a real driver account is online, and payment is demo-only.
 
-| Home page | Customer app | Pricing dashboard |
+| Home page | Customer app | Business model (admin) |
 |---|---|---|
-| ![Home page](docs/screenshots/home.jpg) | ![Customer app login](docs/screenshots/ride.jpg) | ![Pricing dashboard](docs/screenshots/dashboard.jpg) |
+| ![Home page](docs/screenshots/home.jpg) | ![Customer app login](docs/screenshots/ride.jpg) | ![Business model in the admin panel](docs/screenshots/business.jpg) |
+
+The business model screenshot comes from a local copy with seven demo rides; every rate in it is an
+editable demo assumption, not real company accounts.
 
 ## Highlights
 
@@ -25,6 +28,7 @@ unless a real driver account is online, and payment is demo-only.
 | **Help during a ride** | A red Help button for rider and driver: one-tap 112, 108 and 1091, trip sharing, and a live alert to the admin panel. |
 | **Driver verification** | ID, driving licence, vehicle RC, number plate and a selfie, reviewed before a driver can go online. Photos are deleted after review. |
 | **Fair pricing** | A demand model and optimizer set the fare; a limit caps it, lower during snow, storms and closures. Every fare explains what raised it. |
+| **Business model** | The admin panel splits every fare into GST, Raahi's commission, the driver's payout and fuel, and Raahi's own costs, and shows profit per ride and per vehicle. All rates are editable demo assumptions. |
 | **Built for J&K** | Regional weather, road closures, yatra seasons, shared cabs, ~16,800 bookable J&K places, and an offline app shell for weak networks. |
 | **Booking assistant** | Books by text or voice in English, Hindi and Urdu, and only after the rider says yes. |
 | **Email updates** | Welcome emails, "application received" and approval or rejection emails for drivers, and password reset codes. |
