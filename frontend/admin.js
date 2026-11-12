@@ -444,11 +444,16 @@ async function start() {
 }
 
 (async function init() {
-  useAccount("admin");
-  setupShell("Raahi Admin");
-  await loadPhotos();
-  if (await signedInUser("admin")) return start();
-  fill($("auth-form"));
-  showAuthPhoto("krimchi-temples");
-  renderAuth($("auth-form"), "admin", start);
+  showSplash();
+  try {
+    useAccount("admin");
+    setupShell("Raahi Admin");
+    await loadPhotos();
+    if (await signedInUser("admin")) return await start();
+    fill($("auth-form"));
+    showAuthPhoto("krimchi-temples");
+    renderAuth($("auth-form"), "admin", start);
+  } finally {
+    hideSplash();
+  }
 })();

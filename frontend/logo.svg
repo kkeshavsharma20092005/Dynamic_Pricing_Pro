@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <!-- Placeholder Raahi logo, drawn to match icons/icon-512.png. Replace this file with the
+       SVG exported from Figma ("Include id attribute" on). The splash animation in app.css
+       moves the parts named bg, peak and fill; a part that is missing simply stays still. -->
+  <rect id="bg" width="512" height="512" rx="112" fill="#0f4c5c"/>
+  <polygon id="peak" points="256,144 479,378 33,378" fill="#ffffff"/>
+  <polygon id="fill" points="256,200 425,378 88,378" fill="#fb923c"/>
+</svg>

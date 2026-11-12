@@ -29,10 +29,45 @@ function openWomenKyc() {
   sheet.querySelector("select, button").focus();
 }
 
-function applyWomenMode() {
-  document.body.classList.toggle("women-mode", isWomenMode());
-  const meta = document.querySelector('meta[name="theme-color"]');
-  if (meta) meta.content = isWomenMode() ? "#ffe4ee" : "#ffffff";
+// The welcome shown in the pink wave when Women Raahi turns on.
+function womenWelcome(eyebrow) {
+  const first = (me && me.name || "").trim().split(/\s+/)[0];
+  return el("div", { class: "women-welcome" },
+    el("div", { class: "women-welcome-eyebrow" }, "🌸 ", t(eyebrow)),
+    el("div", { class: "women-welcome-title" }, first ? `${t("Welcome,")} ${first}` : t("Welcome")),
+    el("p", { class: "women-welcome-line" }, t("From here on, every ride is with a woman driver. Travel with peace of mind.")));
+}
+
+// animate: fade the colours instead of switching at once. Turning it on also blooms a
+// baby-pink wave out of `from` (the toggle, or the middle of the screen) with `note` in it.
+function applyWomenMode({ animate = false, from = null, note = "" } = {}) {
+  const on = isWomenMode();
+  const body = document.body;
+  const change = () => {
+    body.classList.toggle("women-mode", on);
+    const meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) meta.content = on ? "#ffe4ee" : "#ffffff";
+  };
+  if (!animate || on === body.classList.contains("women-mode")) return change();
+  body.classList.add("theme-fade");
+  setTimeout(() => body.classList.remove("theme-fade"), 900);
+  if (!on || matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    change();
+    if (note) toast(typeof note === "string" ? note : note.querySelector(".women-welcome-title").textContent);
+    return;
+  }
+  const box = from && from.getBoundingClientRect();
+  const x = box ? box.left + box.width / 2 : innerWidth / 2;
+  const y = box ? box.top + box.height / 2 : innerHeight / 2;
+  const petals = Array.from({ length: 9 }, (_, i) => el("span", {
+    class: "women-petal", style: `left:${8 + i * 10.5}%;animation-delay:${(i % 3) * 0.12 + i * 0.03}s`,
+  }, "🌸"));
+  const bloom = el("div", { class: "women-bloom", role: "status", style: `--x:${x}px;--y:${y}px` },
+    petals, note);
+  body.append(bloom);
+  setTimeout(change, 650);                               // the theme changes under the full wave
+  setTimeout(() => bloom.classList.add("leaving"), 3000); // time to read the welcome
+  setTimeout(() => bloom.remove(), 3600);
 }
 
 function womenToggle() {
@@ -43,7 +78,7 @@ function womenToggle() {
     : isVerified() ? "Tap to ride only with women drivers" : "Verify your ID once to turn this on";
   return el("button", {
     type: "button", id: "women-raahi", class: "women-toggle" + (on ? " on" : ""), "aria-pressed": String(on),
-    onclick: () => {
+    onclick: event => {
       if (!isVerified()) {
         if (me.kyc === "pending") toast(t("ID check pending. It turns on once approved."));
         else openWomenKyc();
@@ -51,8 +86,8 @@ function womenToggle() {
       }
       womenMode = !womenMode;
       localStorage.setItem(womenKey(), womenMode ? "1" : "0");
-      applyWomenMode();
-      toast(t(womenMode ? "Women Raahi is on" : "Women Raahi is off"));
+      applyWomenMode({ animate: true, from: event.currentTarget,
+                       note: womenMode ? womenWelcome("Women Raahi is on") : t("Women Raahi is off") });
       renderBooking();
     },
   },
@@ -560,9 +595,14 @@ function onLive(event) {
   } else if (event.type === "kyc") {
     me = event.user;
     // Approval turns Women Raahi on: that is what she was verifying for.
-    if (me.kyc === "approved") { womenMode = true; localStorage.setItem(womenKey(), "1"); }
-    applyWomenMode();
-    toast(t(me.kyc === "approved" ? "You are verified. Women Raahi is ready." : "Your ID check was not approved."));
+    if (me.kyc === "approved") {
+      womenMode = true;
+      localStorage.setItem(womenKey(), "1");
+      applyWomenMode({ animate: true, note: womenWelcome("You are verified") });
+    } else {
+      applyWomenMode();
+      toast(t("Your ID check was not approved."));
+    }
     if (!ride) renderBooking();
   } else if (event.type === "paid") {
     if (!ride || ride.id === event.ride.id) {
@@ -618,12 +658,17 @@ async function start(user) {
 }
 
 (async function init() {
-  useAccount("rider");
-  setupShell("Raahi");
-  await loadPhotos();
-  const signedIn = await signedInUser("rider");
-  if (signedIn) return start(signedIn);
-  fill($("auth-form"));
-  showAuthPhoto("bahu-fort");
-  renderAuth($("auth-form"), "rider", start);
+  showSplash();
+  try {
+    useAccount("rider");
+    setupShell("Raahi");
+    await loadPhotos();
+    const signedIn = await signedInUser("rider");
+    if (signedIn) return await start(signedIn);
+    fill($("auth-form"));
+    showAuthPhoto("bahu-fort");
+    renderAuth($("auth-form"), "rider", start);
+  } finally {
+    hideSplash();
+  }
 })();

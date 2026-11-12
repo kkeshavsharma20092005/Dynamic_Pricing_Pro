@@ -1,7 +1,7 @@
 /* Raahi: a plain, light ride-hailing look. White surfaces, black primary actions, grey
    filled inputs, a clean street map with the booking panel floating over it. One accent
    colour (Raahi green) for good news and live states; nothing glows. */
-@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Playfair+Display:ital,wght@1,500&display=swap");
 
 :root {
   color-scheme: light;
@@ -512,3 +512,111 @@ body.women-mode .leaflet-tile-pane { filter: saturate(.45) brightness(1.05) cont
 .pay-wait { display: flex; align-items: center; gap: 10px; font-weight: 600; color: var(--ink-2); }
 .pay-spinner.small { width: 22px; height: 22px; margin: 0; border-width: 3px; }
 #pay-backdrop .pay-card { border: 0; padding: 0; }
+
+/* ---------- splash: the animated logo while a page starts and while logging in ----------
+   The logo (logo.svg, from Figma) sits inline, so its parts are animated by id:
+   #bg pops in, the white #peak rises over the horizon, then the orange #fill follows and
+   keeps breathing until the page is ready. */
+.splash { position: fixed; inset: 0; z-index: 5000; display: flex; flex-direction: column; align-items: center;
+          justify-content: center; gap: 14px; padding: 16px; background: var(--bg); text-align: center;
+          transition: opacity .35s ease, visibility .35s; }
+.splash.leaving { opacity: 0; visibility: hidden; }
+.splash-logo { width: 112px; height: 112px; }
+.splash-logo svg { display: block; width: 100%; height: 100%; overflow: visible; }
+.splash-word { font-size: 30px; font-weight: 800; letter-spacing: -.03em; color: var(--ink);
+               animation: splash-word .6s .55s cubic-bezier(.2, .8, .2, 1) both; }
+.splash-note { min-height: 20px; max-width: 300px; color: var(--muted); font-size: 13px; }
+
+.splash #bg, .splash #peak, .splash #fill { transform-box: fill-box; }
+.splash #bg   { transform-origin: center; animation: splash-pop .5s cubic-bezier(.3, 1.4, .5, 1) both; }
+.splash #peak { transform-origin: 50% 100%; animation: splash-rise .55s .2s cubic-bezier(.2, .8, .2, 1) both; }
+.splash #fill { transform-origin: 50% 100%;
+                animation: splash-rise .55s .38s cubic-bezier(.2, .8, .2, 1) both,
+                           splash-breathe 1.4s 1.1s ease-in-out infinite; }
+
+@keyframes splash-pop     { from { opacity: 0; transform: scale(.6); } to { opacity: 1; transform: scale(1); } }
+@keyframes splash-rise    { from { opacity: 0; transform: translateY(40%) scaleY(.4); } to { opacity: 1; transform: none; } }
+@keyframes splash-breathe { 0%, 100% { transform: none; } 50% { transform: scaleY(.82); } }
+@keyframes splash-word    { from { opacity: 0; transform: translateY(8px); letter-spacing: .12em; } to { opacity: 1; transform: none; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .splash *, .splash svg * { animation: none !important; }
+}
+
+/* ---------- journey: walk -> bike -> auto -> car while an ID is being checked ----------
+   journey.svg (from Figma) sits inline: inside the Raahi logo tile, each ride squashes flat
+   as the next one pops up in its place. 2 seconds each, 8 for the full loop. */
+.journey { width: 150px; height: 150px; margin: 6px auto 0; filter: drop-shadow(0 8px 18px rgba(15, 76, 92, .25)); }
+.journey svg { display: block; width: 100%; height: 100%; }
+.journey-status { text-align: center; }
+.journey #lane { animation: journey-lane .45s linear infinite; }
+.journey #walk, .journey #bike, .journey #auto, .journey #car {
+  opacity: 0; transform-box: fill-box; transform-origin: 50% 100%; animation: journey-pop 8s infinite both; }
+.journey #bike { animation-delay: 2s; }
+.journey #auto { animation-delay: 4s; }
+.journey #car  { animation-delay: 6s; }
+.journey #walk-leg-a, .journey #walk-leg-b, .journey #walk-arm-a, .journey #walk-arm-b {
+  transform-box: view-box; transform-origin: 119px 178px; animation: journey-swing .4s ease-in-out infinite alternate; }
+.journey #walk-arm-a, .journey #walk-arm-b { transform-origin: 121px 160px; }
+.journey #walk-leg-b, .journey #walk-arm-a { animation-direction: alternate-reverse; }
+body.women-mode .journey { filter: drop-shadow(0 8px 18px rgba(194, 24, 91, .25)); }
+body.women-mode .journey #bg, body.women-mode .journey .window { fill: #d94f8a; }
+body.women-mode .journey #road, body.women-mode .journey .wheel { fill: #a3154f; }
+body.women-mode .journey #fill, body.women-mode .journey .accent { fill: #ffd6e7; }
+
+/* Each ride pops up with a little overshoot, holds, bobs on the road, then squashes flat.
+   The next ride starts popping up at the same moment, so one turns straight into the next. */
+@keyframes journey-pop {
+  0%       { opacity: 0; transform: scale(.4, .1); }
+  3%       { opacity: 1; transform: scale(1.12, .9); }
+  5%       { transform: scale(.95, 1.06); }
+  7%, 12%  { transform: none; }
+  14.5%    { transform: translateY(-2px); }
+  17%, 22% { opacity: 1; transform: none; }
+  25%      { opacity: 0; transform: scale(1.35, .1); }
+  100%     { opacity: 0; transform: scale(1.35, .1); }
+}
+@keyframes journey-lane  { to { stroke-dashoffset: 26; } }
+@keyframes journey-swing { from { transform: rotate(-20deg); } to { transform: rotate(20deg); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .journey * { animation: none !important; }
+  .journey #car { opacity: 1; }
+}
+
+/* ---------- Women Raahi switching on: a baby-pink bloom, then the pink theme ----------
+   The wave grows out of the toggle (or the screen's middle on approval), petals drift up,
+   the theme swaps underneath it, and the wave fades away to show the pink app. */
+body.theme-fade, body.theme-fade * {
+  transition: background-color .7s ease, border-color .7s ease, color .7s ease, filter .7s ease !important; }
+.women-bloom { position: fixed; inset: 0; z-index: 4500; display: flex; align-items: center; justify-content: center;
+               padding: 16px; overflow: hidden; pointer-events: none;
+               background: radial-gradient(circle at var(--x) var(--y), #fff0f6 0%, #ffd6e7 45%, #fbc1d8 100%);
+               animation: women-bloom-grow .65s cubic-bezier(.4, 0, .2, 1) both; transition: opacity .55s ease; }
+.women-bloom.leaving { opacity: 0; }
+.women-bloom-note { display: flex; align-items: center; gap: 10px; padding: 14px 22px; border-radius: 99px;
+                    color: #a3154f; background: rgba(255, 255, 255, .75); box-shadow: 0 8px 30px rgba(194, 24, 91, .18);
+                    font-size: 18px; font-weight: 700; text-align: center;
+                    animation: women-note-in .5s .35s cubic-bezier(.2, .9, .3, 1.3) both; }
+.women-bloom-note span { font-size: 26px; }
+.women-petal { position: absolute; bottom: -40px; font-size: 22px; opacity: 0;
+               animation: women-petal-float 1.9s ease-out both; }
+.women-petal:nth-child(even) { font-size: 16px; }
+
+@keyframes women-bloom-grow  { from { clip-path: circle(0 at var(--x) var(--y)); }
+                               to   { clip-path: circle(150vmax at var(--x) var(--y)); } }
+@keyframes women-note-in     { from { opacity: 0; transform: scale(.8) translateY(10px); } to { opacity: 1; transform: none; } }
+@keyframes women-petal-float { 0% { opacity: 0; transform: translateY(0) rotate(0); } 20% { opacity: .9; }
+                               100% { opacity: 0; transform: translateY(-75vh) rotate(160deg); } }
+
+/* The welcome card inside the pink wave: a small label, "Welcome, <name>" in an italic
+   serif, and one line about what changes. */
+.women-welcome { max-width: 340px; padding: 26px 28px 24px; border-radius: 24px; text-align: center;
+                 background: rgba(255, 255, 255, .82); box-shadow: 0 12px 40px rgba(194, 24, 91, .18);
+                 backdrop-filter: blur(6px); }
+.women-welcome > * { animation: women-note-in .6s cubic-bezier(.2, .9, .3, 1.2) both; }
+.women-welcome-eyebrow { font-size: 12px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase;
+                         color: #c2185b; animation-delay: .35s; }
+.women-welcome-title { margin-top: 8px; font: italic 500 34px/1.15 "Playfair Display", Georgia, serif; color: #8a1846;
+                       animation-delay: .5s; }
+.women-welcome-line { margin: 10px 0 0; font-size: 14px; line-height: 1.5; color: #7a5566; animation-delay: .7s; }

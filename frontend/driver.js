@@ -262,12 +262,17 @@ const vehicleField = () => [{
 }];
 
 (async function init() {
-  useAccount("driver");
-  setupShell("Raahi Driver");
-  await loadPhotos();
-  const signedIn = await signedInUser("driver");
-  if (signedIn) return start(signedIn);
-  fill($("auth-form"));
-  showAuthPhoto("patnitop");
-  renderAuth($("auth-form"), "driver", start, vehicleField);
+  showSplash();
+  try {
+    useAccount("driver");
+    setupShell("Raahi Driver");
+    await loadPhotos();
+    const signedIn = await signedInUser("driver");
+    if (signedIn) return await start(signedIn);
+    fill($("auth-form"));
+    showAuthPhoto("patnitop");
+    renderAuth($("auth-form"), "driver", start, vehicleField);
+  } finally {
+    hideSplash();
+  }
 })();

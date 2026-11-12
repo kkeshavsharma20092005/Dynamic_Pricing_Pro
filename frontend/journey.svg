@@ -1,0 +1,57 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 240" width="240" height="240">
+  <!-- "Your ID is being checked": inside the Raahi logo tile, a traveller on the road
+       squashes down and pops back up as the next ride: walking, a bike, an auto, a car.
+       Placeholder drawing: replace with the SVG exported from Figma ("Include id attribute"
+       on), keeping the ids bg, peak, fill, road, lane, walk, bike, auto and car. -->
+  <defs>
+    <clipPath id="tile"><rect width="240" height="240" rx="52"/></clipPath>
+  </defs>
+  <g clip-path="url(#tile)">
+    <rect id="bg" width="240" height="240" fill="#0f4c5c"/>
+    <polygon id="peak" points="120,34 198,130 42,130" fill="#ffffff"/>
+    <polygon id="fill" points="120,56 178,130 62,130" fill="#fb923c"/>
+    <rect id="road" x="0" y="178" width="240" height="40" fill="#0a3743"/>
+    <line id="lane" x1="-30" y1="214" x2="270" y2="214" stroke="#ffffff" stroke-width="3"
+          stroke-dasharray="14 12" opacity=".55"/>
+
+    <g id="walk">
+      <circle cx="124" cy="143" r="8" fill="#ffffff"/>
+      <rect class="accent" x="110" y="156" width="8" height="14" rx="3" fill="#fb923c"/>
+      <g fill="none" stroke="#ffffff" stroke-width="6" stroke-linecap="round">
+        <path d="M122 155 L119 178"/>
+        <path id="walk-arm-a" d="M121 160 L112 171"/>
+        <path id="walk-arm-b" d="M121 160 L131 169"/>
+        <path id="walk-leg-a" d="M119 178 L111 200"/>
+        <path id="walk-leg-b" d="M119 178 L128 200"/>
+      </g>
+    </g>
+
+    <g id="bike">
+      <circle cx="94" cy="190" r="11" fill="none" stroke="#ffffff" stroke-width="5"/>
+      <circle cx="148" cy="190" r="11" fill="none" stroke="#ffffff" stroke-width="5"/>
+      <path d="M94 190 L111 171 H133 L148 190" fill="none" stroke="#ffffff" stroke-width="5" stroke-linejoin="round" stroke-linecap="round"/>
+      <rect class="accent" x="111" y="166" width="22" height="12" rx="5" fill="#fb923c"/>
+      <path d="M103 165 H118" stroke="#ffffff" stroke-width="6" stroke-linecap="round"/>
+      <path d="M133 171 L139 156 H148" fill="none" stroke="#ffffff" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+    </g>
+
+    <g id="auto">
+      <path d="M80 196 V162 Q79 146 102 144 H124 Q144 145 148 160 L162 186 Q164 196 156 196 Z" fill="#ffffff"/>
+      <path class="accent" d="M80 164 V162 Q79 146 102 144 H124 Q144 145 148 160 L150 164 Z" fill="#fb923c"/>
+      <path class="window" d="M86 168 H116 V188 H86 Z" fill="#0f4c5c"/>
+      <path class="window" d="M122 168 H146 L154 184 H122 Z" fill="#0f4c5c"/>
+      <circle class="wheel" cx="98" cy="198" r="9" fill="#0a3743" stroke="#ffffff" stroke-width="3"/>
+      <circle class="wheel" cx="152" cy="199" r="7" fill="#0a3743" stroke="#ffffff" stroke-width="3"/>
+    </g>
+
+    <g id="car">
+      <path d="M64 196 V182 Q64 174 74 172 L90 170 L105 155 H139 L156 170 L170 174 Q178 176 178 184 V196 Z" fill="#ffffff"/>
+      <path class="window" d="M97 170 L108 161 H120 V170 Z" fill="#0f4c5c"/>
+      <path class="window" d="M125 161 H137 L148 170 H125 Z" fill="#0f4c5c"/>
+      <rect class="accent" x="64" y="183" width="114" height="4" fill="#fb923c"/>
+      <circle class="accent" cx="173" cy="179" r="3" fill="#fb923c"/>
+      <circle class="wheel" cx="90" cy="198" r="10" fill="#0a3743" stroke="#ffffff" stroke-width="3"/>
+      <circle class="wheel" cx="152" cy="198" r="10" fill="#0a3743" stroke="#ffffff" stroke-width="3"/>
+    </g>
+  </g>
+</svg>

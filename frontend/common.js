@@ -48,7 +48,7 @@ const STRINGS = {
     "Popular destinations": "लोकप्रिय जगहें", "Price comparison": "किराये की तुलना",
     "Confirmed fare": "पक्का किराया", "Estimate": "अनुमान", "Our pick": "हमारा सुझाव",
     "Check real fare": "असली किराया देखें",
-    "Connecting to Raahi…": "राही से जुड़ रहे हैं…",
+    "Connecting to Raahi…": "राही से जुड़ रहे हैं…", "Logging you in…": "लॉग इन हो रहा है…",
     "The server is waking up. You stay signed in.": "सर्वर चालू हो रहा है। आप साइन इन रहेंगे।",
     "Your ride is in progress": "आपकी राइड जारी है",
     "Your ride is confirmed": "आपकी राइड पक्की हो गई", "accepted your ride and is on the way.": "ने आपकी राइड स्वीकार की है और आ रहे हैं।",
@@ -100,6 +100,9 @@ const STRINGS = {
     "Tap to ride only with women drivers": "सिर्फ़ महिला ड्राइवरों के साथ जाने के लिए टैप करें",
     "Finding a woman driver…": "महिला ड्राइवर खोज रहे हैं…",
     "Women Raahi is on": "Women Raahi चालू है", "Women Raahi is off": "Women Raahi बंद है",
+    "Welcome,": "स्वागत है,", "Welcome": "स्वागत है", "You are verified": "आप वेरिफ़ाइड हैं",
+    "From here on, every ride is with a woman driver. Travel with peace of mind.":
+      "अब से हर राइड एक महिला ड्राइवर के साथ। सुकून से सफ़र करें।",
     "Your ID is being checked": "आपकी आईडी की जांच हो रही है",
     "You can go online as soon as it is approved. We will tell you here.": "मंज़ूरी मिलते ही आप ऑनलाइन जा सकेंगे। हम आपको यहीं बताएंगे।",
     "Women Raahi turns on as soon as it is approved. We will tell you here.": "मंज़ूरी मिलते ही Women Raahi चालू हो जाएगा। हम आपको यहीं बताएंगे।",
@@ -169,6 +172,54 @@ function fill(node, ...children) {
   return node;
 }
 
+// ---------- splash: the animated logo while a page starts and while logging in
+// The logo is frontend/logo.svg (designed in Figma). It is placed inline rather than as an
+// <img> so app.css can animate its parts by id: #bg, #peak and #fill.
+const SPLASH_MIN_MS = 1200;   // long enough for the logo's intro to play once, never a flash
+let splashShownAt = 0, splashRun = 0;
+
+// Puts one of our own SVG files (logo.svg, journey.svg) inside `box` as real elements, so
+// app.css can animate its parts by id. Each file is fetched once.
+const SVG_FILES = {};
+function inlineSvg(name, box) {
+  SVG_FILES[name] = SVG_FILES[name] || fetch(`/static/${name}`).then(r => (r.ok ? r.text() : "")).catch(() => "");
+  SVG_FILES[name].then(text => {
+    const svg = new DOMParser().parseFromString(text, "image/svg+xml").documentElement;
+    if (svg.nodeName === "svg") box.replaceChildren(document.importNode(svg, true));
+  });
+  return box;
+}
+
+function showSplash(note = "") {
+  let node = $("splash");
+  if (!node) {
+    node = el("div", { id: "splash", class: "splash", role: "status", "aria-live": "polite" },
+      inlineSvg("logo.svg", el("div", { class: "splash-logo", "aria-hidden": "true" })),
+      el("div", { class: "splash-word", "aria-hidden": "true" }, "Raahi"),
+      el("div", { class: "splash-note" }));
+    document.body.append(node);
+  }
+  splashRun++;
+  splashShownAt = Date.now();
+  node.classList.remove("leaving");
+  node.querySelector(".splash-note").textContent = note;
+}
+
+function splashNote(note) {
+  const node = $("splash");
+  if (node) node.querySelector(".splash-note").textContent = note;
+}
+
+async function hideSplash() {
+  const node = $("splash");
+  if (!node) return;
+  const run = splashRun;
+  await new Promise(resolve => setTimeout(resolve, Math.max(0, SPLASH_MIN_MS - (Date.now() - splashShownAt))));
+  if (run !== splashRun) return;            // shown again in the meantime
+  node.classList.add("leaving");
+  setTimeout(() => { if (run === splashRun) node.remove(); }, 400);
+}
+
 const token = () => SESSION.getItem(TOKEN_KEY);
 
 // Who is signed in on this device, for this app. Only a 401 means "signed out": a server
@@ -188,6 +239,7 @@ async function signedInUser(role) {
     } catch { /* offline or server starting: wait and try again */ }
     if (note) fill(note, el("div", { class: "center stack" }, el("div", { class: "status pulse" }, t("Connecting to Raahi…")),
       el("div", { class: "muted" }, t("The server is waking up. You stay signed in."))));
+    splashNote(t("The server is waking up. You stay signed in."));
     await new Promise(resolve => setTimeout(resolve, 3000));
   }
   return null;
@@ -406,9 +458,14 @@ function renderAuth(root, role, onDone, extraFields = () => []) {
     const send = async () => {
       phoneValue = phone.value;
       if (mode === "login") {
-        const result = await api("/login", { method: "POST", body: { phone: phone.value, password: password.value, role } });
-        SESSION.setItem(TOKEN_KEY, result.token);
-        onDone(result.user);
+        showSplash(t("Logging you in…"));
+        try {
+          const result = await api("/login", { method: "POST", body: { phone: phone.value, password: password.value, role } });
+          SESSION.setItem(TOKEN_KEY, result.token);
+          await onDone(result.user);
+        } finally {
+          hideSplash();
+        }
       } else if (mode === "signup") {
         const result = await api("/register", { method: "POST", body: {
           phone: phone.value, name: name.value, email: email.value, password: password.value, role,
@@ -523,6 +580,7 @@ function askGender(user) {
         el("div", { class: "muted" }, t("To change this later, contact Raahi support."))));
     document.body.append(sheet);
     sheet.querySelector("button").focus();
+    hideSplash();          // the question needs an answer, so the logo must not cover it
   });
 }
 
@@ -568,7 +626,8 @@ function kycPanel(user, onSaved) {
   const driver = user.role === "driver";
   if (user.kyc === "pending") {
     return el("div", { class: "kyc stack" },
-      el("div", { class: "status pulse", role: "status" }, t("Your ID is being checked")),
+      inlineSvg("journey.svg", el("div", { class: "journey", "aria-hidden": "true" })),
+      el("div", { class: "status journey-status", role: "status" }, t("Your ID is being checked")),
       el("p", { class: "muted" }, t(driver ? "You can go online as soon as it is approved. We will tell you here."
         : "Women Raahi turns on as soon as it is approved. We will tell you here.")));
   }
