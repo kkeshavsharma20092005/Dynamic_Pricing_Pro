@@ -633,9 +633,11 @@ function kycPanel(user, onSaved) {
   }
   const error = el("div", { class: "error", role: "alert" });
   const photos = {};
-  const photoInput = (key, label, hint, capture) => {
+  // No `capture` attribute: with it, phones open the camera straight away. Without it they
+  // offer the camera, the gallery and files, so a photo taken earlier can be used too.
+  const photoInput = (key, label, hint) => {
     const preview = el("img", { class: "kyc-preview hidden", alt: "" });
-    const input = el("input", { type: "file", accept: "image/*", capture, id: `kyc-${key}`, onchange: async () => {
+    const input = el("input", { type: "file", accept: "image/*", id: `kyc-${key}`, onchange: async () => {
       const file = input.files[0];
       if (!file) return;
       try {
@@ -682,10 +684,10 @@ function kycPanel(user, onSaved) {
       el("div", { class: "muted" }, t("As painted on your vehicle."))),
     el("div", {}, el("label", { htmlFor: "kyc-document" }, t("ID document")), documentSelect),
     el("div", { class: "muted" }, t("For Aadhaar, upload the masked Aadhaar, with only the last 4 digits showing.")),
-    photoInput("id_image", "Photo of your ID", null, "environment"),
-    driver && photoInput("licence_image", "Photo of your driving licence", null, "environment"),
-    driver && photoInput("rc_image", "Photo of your vehicle's RC", "The registration certificate. Its number must match the plate above.", "environment"),
-    photoInput("selfie", "A selfie", "Your face, clearly, in good light.", "user"),
+    photoInput("id_image", "Photo of your ID", null),
+    driver && photoInput("licence_image", "Photo of your driving licence", null),
+    driver && photoInput("rc_image", "Photo of your vehicle's RC", "The registration certificate. Its number must match the plate above."),
+    photoInput("selfie", "A selfie", "Your face, clearly, in good light."),
     el("label", { class: "kyc-consent", htmlFor: "kyc-consent" }, consent,
       el("span", {}, t("I agree that Raahi checks these documents. They are deleted as soon as the check is done."))),
     error, submit);
