@@ -25,12 +25,12 @@ editable demo assumption, not real company accounts.
 | | |
 |---|---|
 | **Women Raahi** | Verified women riders can choose rides that go only to verified women drivers. Gender comes from the ID document an admin checks, not a tick box. |
-| **Help during a ride** | A red Help button for rider and driver: one-tap 112, 108 and 1091, trip sharing, and a live alert to the admin panel. |
+| **SOS during a ride** | A red SOS button for rider and driver, above every pop-up: one-tap 112, 108 and 1091, trip sharing, and a live alert to the admin panel. |
 | **Driver verification** | ID, driving licence, vehicle RC, number plate and a selfie, reviewed before a driver can go online. Photos are deleted after review. |
 | **Fair pricing** | A demand model and optimizer set the fare; a limit caps it, lower during snow, storms and closures. Every fare explains what raised it. |
 | **Business model** | The admin panel splits every fare into GST, Raahi's commission, the driver's payout and fuel, and Raahi's own costs, and shows profit per ride and per vehicle. All rates are editable demo assumptions. |
 | **Built for J&K** | Regional weather, road closures, yatra seasons, shared cabs, ~16,800 bookable J&K places, and an offline app shell for weak networks. |
-| **Booking assistant** | Books by text or voice in English, Hindi and Urdu, and only after the rider says yes. With Sarvam AI it also hears Dogri and Kashmiri. |
+| **Local-guide assistant** | Books by text or voice in English, Hindi, Hinglish, Urdu and everyday Dogri, only after the rider says yes; uses the rider's location, finds the nearest temples, mosques and gurudwaras, answers questions about J&K's best-known places and today's weather, and says which driver is coming. With Sarvam AI it also hears Kashmiri. |
 | **Email updates** | Welcome emails, "application received" and approval or rejection emails for drivers, and password reset codes. |
 | **Tested** | 140+ automated tests run the real app end to end against a throwaway database. |
 
@@ -235,6 +235,14 @@ and offers the map rather than guessing. A rider's extra words stay on the ride,
 **Conversation:** the assistant greets riders by name, remembers their home and last trip, asks one thing at a
 time, and speaks amounts and distances as words. After a spoken question it listens again by itself, except at
 the booking question, which needs a tap on the mic so that background noise can't be heard as a yes.
+
+**As a local guide:** it introduces itself as Raahi, your local guide, and:
+
+- understands everyday Dogri (`मिगी जम्मू थमां कटरा जाना ऐ`, `इत्थूं एयरपोर्ट जाना ऐ`, `कटरा दा किराया किन्ना ऐ`, `jammu thaman katra gaddi chahidi ae`) and replies in Hindi, which Dogri speakers read easily; Dogri replies would need checking by native speakers first;
+- answers questions such as `katra mein kya dekhna hai`, `vaishno devi ki yatra kab hoti hai` or `jammu mein ghoomne ki jagah` from short hand-written notes on 17 places (`backend/jkinfo.py`), with a button to go there;
+- gives today's weather from [Open-Meteo](https://open-meteo.com) (free, no key or account; `LIVE_WEATHER=0` turns it off and the admin's conditions are used instead), and says when a road is closed;
+- lists the nearest temples, mosques or gurudwaras to the rider's location (`mere paas ke mandir`, `temples near me`, Dogri `इत्थूं कोल मंदिर`) or to a town (`katra ke paas mandir`), from the OpenStreetMap places in the app; a tap goes straight to fares;
+- uses the rider's location by itself when the browser already allows it, tells the rider to pick one of the options below, says to watch the main screen after booking, adds a local tip for places like Katra (`Jai Mata Di! …`), and announces the driver when one accepts (`Aapko Ajay Gupta naam ka driver assign hua hai…`).
 
 It runs on written rules in `backend/chatbot.py`, not an AI model. That means no API key, no cost per
 message, and no messages sent to an outside service, and every behaviour can be tested exactly. The

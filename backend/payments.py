@@ -138,7 +138,7 @@ PAGE = """<!DOCTYPE html>
   <meta name="robots" content="noindex" />
   <title>Raahi - {title}</title>
   <link rel="icon" href="/static/icons/icon-192.png" />
-  <link rel="stylesheet" href="/static/app.css?v=30" />
+  <link rel="stylesheet" href="/static/app.css?v=32" />
 </head>
 <body class="pay-page">
   <header class="topbar"><h1><a href="/">Raahi</a></h1></header>

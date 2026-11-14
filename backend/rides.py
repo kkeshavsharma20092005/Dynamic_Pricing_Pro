@@ -18,6 +18,7 @@ import time
 from datetime import datetime, timedelta, timezone
 
 import jwt
+from fastapi.concurrency import run_in_threadpool
 from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Query, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, Field
 
@@ -25,6 +26,7 @@ import appdb
 import business
 import chatbot
 import geocode
+import jkinfo
 import localities
 import mailer
 import placesdb
@@ -1135,6 +1137,25 @@ async def chat_reply(body: ChatBody, user: dict) -> dict:
 
     if parsed.history:
         return {"text": trip_history_text(user, lang)}
+    if parsed.weather:
+        return {"text": await weather_reply(parsed.about, lang)}
+    if parsed.info:
+        return info_reply(parsed.about, lang)
+    if parsed.nearby:
+        if parsed.near == chatbot.CURRENT:
+            return {"text": chatbot.say(lang, "locating"), "need_location": f"nearby:{parsed.nearby}"}
+        town = BY_NAME[parsed.near]
+        return nearby_reply(chat, lang, parsed.nearby, town["lat"], town["lon"], here=None, town=parsed.near)
+    # The app has sent the rider's position for "temples near me".
+    if body.location and body.target.startswith("nearby:"):
+        faith = body.target.split(":", 1)[1]
+        if faith not in chatbot.FAITH_NAMES["en"]:
+            raise HTTPException(422, "Unknown place of worship.")
+        lat, lon = body.location.lat, body.location.lon
+        if not in_service_area(lat, lon):
+            return {"text": chatbot.say(lang, "outside")}
+        here = {"lat": lat, "lon": lon, "name": (await describe_point(lat, lon))[:120]}
+        return nearby_reply(chat, lang, faith, lat, lon, here=here)
 
     ride = active_ride_for(user)
     if not ride and (parsed.status or parsed.call) and not parsed.has_place and not parsed.free:
@@ -1192,6 +1213,9 @@ async def chat_reply(body: ChatBody, user: dict) -> dict:
         check_women_only(user, body.women_only)
         created = await create_ride(user, quoted, option, body.women_only)
         text = chatbot.say(lang, "booked", fare=created["fare"], pickup=chat["pickup"]["name"], dropoff=chat["dropoff"]["name"])
+        tip = jkinfo.place_tip(chat["dropoff"]["name"], lang)      # a local guide's word for the trip
+        if tip:
+            text = f"{text} {tip}"
         chat.update(pickup=None, dropoff=None, vehicle=None, asking=None)
         return {"text": text, "ride": ride_view(created, user)}
 
@@ -1252,6 +1276,48 @@ async def chat_reply(body: ChatBody, user: dict) -> dict:
     return await next_step(chat, user, lang, parsed, None)
 
 
+async def weather_reply(place: str | None, lang: str) -> str:
+    """Today's weather at a place, or across the three regions, with any road closure."""
+    if place:
+        points = [(place, BY_NAME[place]["region"])]
+    else:
+        points = [(jkinfo.REGION_POINTS[r], r) for r in ("JMU", "HIL", "KSH")]
+    conditions = {r: conditions_for(r) for r in REGIONS}
+    label = lambda name: chatbot.place_label(name, lang)   # noqa: E731
+    # Open-Meteo is a network call; run it off the event loop.
+    return await run_in_threadpool(jkinfo.weather_text, lang, points, conditions, label)
+
+
+def nearby_reply(chat: dict, lang: str, faith: str, lat: float, lon: float, here: dict | None,
+                 town: str | None = None) -> dict:
+    """The nearest places of worship, said like a guide would, each one tappable as the drop-off.
+    With the rider's own position, that position becomes the pickup, so a tap goes straight to fares."""
+    kind = chatbot.FAITH_NAMES[lang][faith]
+    found = placesdb.nearby_worship(lat, lon, faith)
+    if not found:
+        return {"text": chatbot.say(lang, "nearby_none", kind=kind)}
+    if here:
+        chat.update(pickup=here, dropoff=None, vehicle=None, asking=None, awaiting=None)
+    unit = "किमी" if lang == "hi" else "کلومیٹر" if lang == "ur" else "km"
+    places = chatbot.spoken_list(lang, [f"{p['name']} ({p['km']} {unit})" for p in found[:3]])
+    text = (chatbot.say(lang, "nearby_town", kind=kind, places=places, place=town) if town
+            else chatbot.say(lang, "nearby_found", kind=kind, places=places))
+    return {"text": text, **({"pickup": here} if here else {}),
+            "buttons": [{"label": f"{p['name']} · {p['km']} km", "action": "point", "target": "dropoff",
+                         "point": {"lat": p["lat"], "lon": p["lon"], "name": p["name"]}} for p in found]}
+
+
+def info_reply(place: str | None, lang: str) -> dict:
+    """A short note on a place with a button to go there, or the best-known places to choose from."""
+    def go(name):
+        return {"label": chatbot.say(lang, "go_there", place=name), "send": f"to {name}"}
+    if place:
+        note = jkinfo.place_note(place, lang)
+        return {"text": note or chatbot.say(lang, "no_note", place=place), "buttons": [go(place)]}
+    return {"text": jkinfo.OVERVIEW[jkinfo.text_lang(lang)],
+            "buttons": [{"label": chatbot.place_label(name, lang), "send": f"to {name}"} for name in jkinfo.OVERVIEW_PLACES]}
+
+
 def trip_points(chat: dict) -> dict:
     return {k: chat[k] for k in ("pickup", "dropoff") if chat[k]}
 
@@ -1264,8 +1330,9 @@ async def next_step(chat: dict, user: dict, lang: str, parsed: chatbot.Parsed, o
     reply = trip_points(chat)
     if not chat["pickup"]:
         chat["asking"] = "pickup"
+        # ask_location: the app may answer with the rider's position itself, if already allowed.
         return {**reply, "text": lead(chatbot.say(lang, "ask_pickup", dropoff=chat["dropoff"]["name"])),
-                "buttons": place_buttons(lang, "pickup", user), "listen": True}
+                "buttons": place_buttons(lang, "pickup", user), "listen": True, "ask_location": True}
     if not chat["dropoff"]:
         chat["asking"] = "dropoff"
         return {**reply, "text": lead(chatbot.say(lang, "ask_dropoff", pickup=chat["pickup"]["name"])),
@@ -1292,13 +1359,15 @@ async def next_step(chat: dict, user: dict, lang: str, parsed: chatbot.Parsed, o
         text = (chatbot.say(lang, "not_offered", vehicle=names[chat["vehicle"]]) if chat["vehicle"]
                 else chatbot.say(lang, "ask_vehicle", **trip))
         chat["vehicle"] = None
-        return {**reply, "path": quoted["path"], "text": lead(text), "note": note, "buttons": buttons, "listen": True}
+        text = f"{lead(text)} {chatbot.say(lang, 'hint_vehicle')}"
+        return {**reply, "path": quoted["path"], "text": text, "note": note, "buttons": buttons, "listen": True}
 
     chat["awaiting"] = "book"
     labels = chatbot.BUTTON_LABELS[lang]
     rec = recommendation_note(lang, option)
     return {**reply, "path": quoted["path"],
-            "text": lead(chatbot.say(lang, "best_value" if best else "confirm", vehicle=names[option["vehicle"]], fare=option["fare"], **trip)),
+            "text": lead(chatbot.say(lang, "best_value" if best else "confirm", vehicle=names[option["vehicle"]], fare=option["fare"], **trip))
+                    + " " + chatbot.say(lang, "hint_confirm"),
             "note": " ".join(n for n in (note, rec) if n) or None,
             "buttons": [{"label": labels["no"], "send": "no"}, {"label": labels["yes"], "send": "yes"}]}
 

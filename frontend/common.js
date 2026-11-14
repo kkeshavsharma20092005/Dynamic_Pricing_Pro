@@ -694,7 +694,7 @@ function kycPanel(user, onSaved) {
 }
 
 // ---------- help during a ride
-// A red Help button stays on screen while a ride is live. It offers emergency numbers,
+// A red SOS button stays on screen, above every pop-up, while a ride is live. It offers emergency numbers,
 // sharing the trip with someone, and a report to Raahi support that admins see at once.
 const HELP_TOPICS = {
   rider: [["safety", "I feel unsafe"], ["driver", "Problem with the driver"], ["route", "Wrong route or stop"],
@@ -745,13 +745,15 @@ function buildRideHelp() {
   const opener = el("button", {
     id: "help-open", type: "button", class: "help-open hidden", "aria-label": t("Help during your ride"),
     onclick: () => open(),
-  }, el("span", { "aria-hidden": "true" }, "🆘"), " ", t("Help"));
+  }, el("span", { "aria-hidden": "true" }, "🆘"), " ", "SOS");
   document.body.append(sheet, opener);
 
   const close = () => sheet.classList.add("hidden");
   addEventListener("keydown", event => { if (event.key === "Escape" && !sheet.classList.contains("hidden")) close(); });
 
   function open() {
+    const confirmed = document.getElementById("confirm-backdrop");   // in an emergency, nothing else on top
+    if (confirmed) confirmed.remove();
     draw();
     sheet.classList.remove("hidden");
     sheet.querySelector("a, button").focus();

@@ -1,5 +1,9 @@
 """
-Understands ride requests in English, Hindi, Urdu and Roman Hindi/Urdu.
+Understands ride requests in English, Hindi, Urdu, Roman Hindi/Urdu and everyday Dogri
+(मिगी जम्मू थमां कटरा जाना ऐ, migi ithun airport jana ae). Dogri is answered in Hindi, which
+Dogri speakers read easily, because replies written in Dogri would need checking by native
+speakers. It also answers questions about J&K's best-known places and today's weather
+(see jkinfo.py).
 
 This is rule-based on purpose: it needs no API key, costs nothing per message, sends
 nothing to an outside service, and can be tested exactly. The price is that it understands
@@ -57,7 +61,7 @@ VEHICLES = {
     "bike": ["bike", "scooter", "motorcycle", "बाइक", "بائیک"],
     "auto": ["auto", "rickshaw", "ऑटो", "ऑटो रिक्शा", "रिक्शा", "آٹو", "رکشہ"],
     "shared": ["shared", "share", "sumo", "शेयर", "शेयर्ड", "सूमो", "شیئرڈ", "سومو"],
-    "cab": ["cab", "taxi", "car", "gaadi", "gadi", "कैब", "टैक्सी", "कार", "गाड़ी", "ٹیکسی", "کیب", "گاڑی"],
+    "cab": ["cab", "taxi", "car", "gaadi", "gadi", "gaddi", "कैब", "टैक्सी", "कार", "गाड़ी", "गड्डी", "ٹیکسی", "کیب", "گاڑی"],
 }
 VEHICLE_NAMES = {
     "en": {"bike": "Bike", "erickshaw": "E-rickshaw", "auto": "Auto", "cab": "Cab", "shared": "Shared cab"},
@@ -67,10 +71,13 @@ VEHICLE_NAMES = {
 }
 
 # "main bharat nagar mein hoon" names where the rider is, so "hoon" works like "se".
-FROM_AFTER = {"se", "sey", "से", "سے", "hoon", "hun", "hu", "हूं", "हूँ", "ہوں"}
+# Dogri says "X थमां" (thaman) for "from X".
+FROM_AFTER = {"se", "sey", "से", "سے", "hoon", "hun", "hu", "हूं", "हूँ", "ہوں", "थमां", "थमा", "thaman", "thamaan", "thama"}
 FROM_BEFORE = {"from", "pickup", "am", "पिकअप", "پک"}
 TO_BEFORE = {"to", "till", "towards", "drop", "dropoff", "ड्रॉप", "ڈراپ"}
-TO_AFTER = {"tak", "ko", "jana", "jaana", "chalo", "तक", "को", "जाना", "चलो", "تک", "کو", "جانا", "چلو"}
+# "katra ke liye gaadi", "vaishno devi kaise jaun" name where the rider is going.
+TO_AFTER = {"tak", "ko", "jana", "jaana", "chalo", "तक", "को", "जाना", "चलो", "تک", "کو", "جانا", "چلو",
+            "jaun", "jau", "jaaun", "जाऊं", "जाऊँ", "liye", "लिए", "لیے", "pahunchna", "पहुंचना", "पहुँचना"}
 DIRECTION_WORDS = FROM_AFTER | FROM_BEFORE | TO_BEFORE | TO_AFTER
 
 CURRENT = "__current__"
@@ -80,28 +87,48 @@ POSSESSIVE = {"mera", "meri", "my", "apna", "मेरा", "मेरी", "अ
 
 CONFIRM = {"yes", "yeah", "yep", "ok", "okay", "confirm", "book", "haan", "han", "ha", "ji", "theek", "thik",
            "हां", "हाँ", "जी", "ठीक", "ओके", "बुक", "ہاں", "جی", "ٹھیک", "بک", "اوکے"}
-DENY = {"no", "nope", "nahi", "nhi", "nahin", "cancel", "radd", "stop",
-        "नहीं", "नही", "रद्द", "कैंसल", "نہیں", "کینسل", "منسوخ"}
+DENY = {"no", "nope", "nahi", "nhi", "nahin", "nei", "cancel", "radd", "stop",
+        "नहीं", "नही", "नेईं", "नईं", "रद्द", "कैंसल", "نہیں", "کینسل", "منسوخ"}
 CANCEL = {"cancel", "radd", "रद्द", "कैंसल", "کینسل", "منسوخ"}
 CHEAPEST = {"optimal", "cheapest", "cheap", "best", "sasta", "sasti", "saste", "budget", "सस्ता", "सस्ती", "सबसे", "ऑप्टिमल", "سستا", "سستی", "بہترین", "sabse"}
 STATUS = {"status", "where", "kahan", "kaha", "kha", "kahaan", "kidhar", "driver", "कहां", "कहाँ", "ड्राइवर", "کہاں", "ڈرائیور"}
 TEMPLES = {"temple", "temples", "mandir", "mandirs", "shrine", "मंदिर", "मंदिरों", "مندر", "مندروں"}
+MOSQUES = {"masjid", "mosque", "mosques", "masjiden", "मस्जिद", "مسجد", "مسجدیں"}
+GURUDWARAS = {"gurudwara", "gurdwara", "gurudwaras", "gurudware", "गुरुद्वारा", "گردوارہ"}
+# "paas ke mandir", "mandir near me"; Dogri says कोल / नेड़े.
+NEAR = {"paas", "pass", "nazdeek", "najdeek", "nazdik", "najdik", "nearby", "near", "nearest", "kareeb", "karib",
+        "kol", "nede", "पास", "नजदीक", "करीब", "कोल", "नेड़े", "नेडे", "قریب", "پاس", "نزدیک"}
 CALL = {"call", "phone", "ring", "कॉल", "फोन", "फ़ोन", "کال", "فون"}
 HISTORY = {"history", "trips", "past", "pichli", "purani", "पिछली", "इतिहास", "यात्राएं", "تاریخ", "سفروں", "پچھلی"}
 GREET = {"hi", "hello", "hey", "namaste", "namaskar", "salam", "assalam", "नमस्ते", "नमस्कार", "سلام", "اسلام"}
+# Questions about a place ("katra mein kya dekhna hai") or the weather, rather than a trip.
+INFO = {"dekhna", "dekhne", "dekhu", "ghoomna", "ghoomne", "ghumne", "ghumna", "ghoom", "sightseeing", "visit",
+        "famous", "mashhoor", "mashoor", "baare", "bare", "jankari", "jaankari", "about", "information", "info",
+        "yatra", "darshan", "kab", "when", "attractions", "places",
+        "देखना", "देखने", "घूमना", "घूमने", "जगहें", "प्रसिद्ध", "मशहूर", "बारे", "जानकारी", "यात्रा", "दर्शन", "कब",
+        "दिक्खना", "दिक्खने", "dikkhna"}
+WEATHER = {"mausam", "weather", "temperature", "barish", "baarish", "barf", "snow", "snowfall", "thand", "garmi",
+           "मौसम", "बारिश", "बर्फ", "ठंड", "गर्मी", "तापमान", "موسم", "بارش", "برف"}
+FARE_WORDS = {"kiraya", "fare", "price", "किराया", "کرایہ"}
 ROMAN_HINDI = {"mujhe", "muje", "mereko", "jana", "jaana", "hai", "se", "tak", "chahiye", "kitna", "kahan", "kaha",
                "karo", "kardo", "kar", "nahi", "haan", "mera", "meri", "mein", "aur", "kya", "kaise", "bhai", "gaadi",
                "gadi", "namaste", "salam", "madad", "chalo", "lena", "sabse", "sasta", "sasti", "batao", "bataiye", "dikhao", "kiraya", "kitne",
-               "kha", "kahaan", "kidhar", "ghar", "ghr", "yahan", "yaha", "hoon", "hun"}
+               "kha", "kahaan", "kidhar", "ghar", "ghr", "yahan", "yaha", "hoon", "hun", "abhi", "kitni", "door", "dijiye",
+               "jaun", "liye", "mausam", "dekhna", "ghoomne", "jagah", "yatra", "kab", "ke", "ki", "ka", "paas", "pass",
+               # Roman Dogri
+               "migi", "miki", "ae", "thaman", "thamaan", "ithun", "itthun", "ithon", "chahidi", "chahida", "gaddi", "kinna"}
 
 
 FILLER_WORDS = """optimal cheapest cheap best sasta sasti saste sabse budget price fare kiraya batao bataiye bata tell show
     kitna kitne dikhao kaunsa konsa which what सस्ता सस्ती सबसे किराया बताओ बताइए कितना دکھاؤ سستا سستی بہترین کرایہ بتاؤ کتنا
     i im am a an the want need please book ride go going take me get pick up by via is are in at on
-    can you my mine would like let lets now today
+    can you my mine would like let lets now today it this that
     mujhe muje mujhko mereko main mai mein me mera meri mere apne apna apni hai hain ho tha chahiye karo kardo karna kar
     ke ka ki liye par pe wala wali aur bhai ji ek
+    do de dijiye dijie dena dedo kijiye kijie plz abhi jaldi zara ab kaise kese how far door dur distance kitni
     मुझे मुझको मैं में मेरा मेरी मेरे अपने अपना है हैं हो चाहिए करो करना कर दो के का की लिए पर वाला और भाई एक बुक राइड
+    दीजिए दीजिये कीजिए अभी जल्दी कैसे कितनी दूर दूरी
+    मिगी मिकी migi miki ऐ ae ए दा da दी di किन्ना kinna चाहिदी चाहिदा chahidi chahida
     مجھے میں میرا میری میرے اپنے اپنا ہے ہیں ہو چاہیے کرو کرنا کر دو کے کا کی لیے پر والا اور بھائی ایک بک سواری""".split()
 
 
@@ -136,6 +163,7 @@ CURRENT_PHRASES = sorted((tuple(normalise(p)) for p in (
     "my current location", "current location", "my location", "my place", "here", "right here",
     "meri current location", "meri location", "mera location", "yahan", "yaha", "yahin", "isi jagah",
     "मेरी करंट लोकेशन", "करंट लोकेशन", "मेरी लोकेशन", "मौजूदा लोकेशन", "मेरी जगह", "यहां", "यहाँ", "यहीं",
+    "इत्थूं", "इत्थों", "इत्थे", "इत्थें", "ithun", "itthun", "ithon", "itthon", "ithe", "itthe",   # Dogri: (from) here
     "میری کرنٹ لوکیشن", "کرنٹ لوکیشن", "میری لوکیشن", "موجودہ مقام", "یہاں", "یہیں")), key=lambda p: -len(p))
 LATIN_NAMES = {tokens[0]: value for tokens, value in PLACE_INDEX
                if len(tokens) == 1 and tokens[0].isascii() and len(tokens[0]) >= 5}
@@ -157,6 +185,11 @@ class Parsed:
     call: bool = False
     history: bool = False
     cheapest: bool = False
+    nearby: str | None = None    # "temple", "mosque" or "gurudwara": places of worship near...
+    near: str | None = None      # ...this place, or CURRENT for the rider's own location
+    info: bool = False           # a question about a place, not a trip
+    weather: bool = False
+    about: str | None = None     # the known place an info or weather question names
     free: str | None = None      # words that could be an address, with no direction word
     save_home: str | None = None
     tokens: list = field(default_factory=list)
@@ -223,10 +256,27 @@ def parse(text: str) -> Parsed:
     if vehicles:
         p.vehicle = vehicles[0][2]
 
-    # "Jammu's temples" asks about temples in general, not for a ride to Jammu city.
+    # "Mujhe paas ke mandir dekhne hain, apni current location se": the nearest ones to the rider.
     matches = _find(tokens, PLACE_INDEX)
+    faith = ("temple" if words & TEMPLES else "mosque" if words & MOSQUES
+             else "gurudwara" if words & GURUDWARAS else None)
+    here = CURRENT in _mark_special_places(tokens)
+    if faith and (here or words & NEAR):
+        towns = [name for _, _, name in matches if name != "Jammu City"]
+        p.nearby, p.near = faith, (CURRENT if here or not towns else towns[0])
+        return p
+
+    # "Jammu's temples" asks about temples in general, not for a ride to Jammu city.
     if words & TEMPLES and all(name == "Jammu City" for _, _, name in matches) and not words & TO_AFTER:
         p.temples = True
+        return p
+
+    # "Katra mein kya dekhna hai", "Srinagar ka mausam": a question, unless it also asks for a trip.
+    asks_trip = words & DIRECTION_WORDS or words & FARE_WORDS or p.vehicle
+    if (words & INFO or words & WEATHER) and not asks_trip:
+        p.weather = bool(words & WEATHER)
+        p.info = not p.weather
+        p.about = matches[0][2] if matches else None
         return p
 
     tokens = _mark_special_places(tokens)
@@ -296,7 +346,10 @@ def _read_trip(tokens: list, p: Parsed):
         return words
 
     for token in tokens:
-        if token in FROM_AFTER:                       # "X se"
+        if token == CURRENT and not _clean(buffer):   # "yahan se ...", Dogri "इत्थूं ..." (from here)
+            buffer.clear()
+            pickup, target = [CURRENT], None
+        elif token in FROM_AFTER:                     # "X se"
             pickup = take() or pickup
             target = None
         elif token in FROM_BEFORE:                    # "from X"
@@ -347,8 +400,8 @@ def _read_trip(tokens: list, p: Parsed):
 BRAND = "Raahi"
 REPLIES = {
     "en": {
-        "help": "Tell me where you want to go, like \"Jammu to Katra by cab\". I can also show Jammu's temples or tell you where your ride is.",
-        "greet": "Hello! Where would you like to go?",
+        "help": "I'm your local guide. Tell me where you want to go, like \"Jammu to Katra by cab\", or ask me about a place, like \"what to see in Katra\", or today's weather.",
+        "greet": "Hello! I'm Raahi, your local guide. Where would you like to go?",
         "ask_pickup": "Going to {dropoff}. Where should I pick you up?",
         "ask_dropoff": "Pickup from {pickup}. Where are you going?",
         "ask_vehicle": "{pickup} to {dropoff}, {km} km. Which one would you like?",
@@ -356,7 +409,14 @@ REPLIES = {
         "confirm": "{vehicle} from {pickup} to {dropoff}: ₹{fare} for {km} km. Shall I book it?",
         "rec_rival": "By estimate, {rival} may be cheaper (assumed rates, not a live price). Check its app first if you like.",
         "rec_us": "By estimate, this is below Rapido and Uber (assumed rates, not live prices).",
-        "booked": "Booked! ₹{fare}, {pickup} to {dropoff}. I'm finding your driver now.",
+        "booked": "Booked! ₹{fare}, {pickup} to {dropoff}. I'm finding your driver now. Watch your ride on the main screen.",
+        "hint_vehicle": "Pick one of the options below, or just say it.",
+        "hint_confirm": "There are two options below: tap one, or say yes or no.",
+        "go_there": "🚕 Go to {place}",
+        "nearby_found": "These {kind} are closest to you: {places}. Tap one and I'll take you there.",
+        "nearby_town": "These {kind} are close to {place}: {places}. Tap one and I'll take you there.",
+        "nearby_none": "I couldn't find any {kind} within 15 km of you.",
+        "no_note": "I don't have notes on {place} yet, but I can book you a ride there.",
         "dropped": "Okay, I've cleared that trip. Where would you like to go instead?",
         "confirm_cancel": "Cancel your ride from {pickup} to {dropoff}?",
         "cancelled": "Your ride is cancelled.",
@@ -380,8 +440,8 @@ REPLIES = {
         "where_is": "{place} is near {town}. Shall we go there? Tell me where to pick you up.",
         "which_one": "I found a few places called that. Which one do you mean?",
         "best_value": "The cheapest here is {vehicle} at ₹{fare}, from {pickup} to {dropoff}, {km} km. Shall I book it?",
-        "hello": "{greeting}, {name}! Where are we headed?",
-        "hello_again": "{greeting}, {name}! {place} again, or somewhere new today?",
+        "hello": "{greeting}, {name}! I'm Raahi, your local guide for Jammu & Kashmir. Where are we headed today? You can also ask me about any place or the weather.",
+        "hello_again": "{greeting}, {name}! Good to see you again. {place} again, or somewhere new today?",
         "locating": "Sure, let me find where you are.",
         "located": "Found you near {pickup}.",
         "ask_where": "Tell me your area or a nearby landmark, or I can use your current location.",
@@ -393,8 +453,8 @@ REPLIES = {
         "btn_here": "📍 My current location", "btn_map": "🗺️ Pick on map", "btn_home": "🏠 Home",
     },
     "hinglish": {
-        "help": "Bataiye kahan jana hai, jaise \"Jammu se Katra cab\". Main Jammu ke mandir bhi dikha sakta hoon, aur bata sakta hoon ki aapki ride kahan hai.",
-        "greet": "Namaste! Aapko kahan jana hai?",
+        "help": "Main aapka local guide hoon. Bataiye kahan jana hai, jaise \"Jammu se Katra cab\", ya kisi jagah ke baare mein puchiye, jaise \"Katra mein kya dekhna hai\", ya aaj ka mausam.",
+        "greet": "Namaste ji! Main Raahi, aapka local guide. Kahan chalna hai?",
         "ask_pickup": "{dropoff} jana hai. Aapko kahan se pick karun?",
         "ask_dropoff": "{pickup} se pickup. Kahan jana hai?",
         "ask_vehicle": "{pickup} se {dropoff}, {km} km. Kaunsi gaadi chahiye?",
@@ -402,7 +462,14 @@ REPLIES = {
         "confirm": "{vehicle}, {pickup} se {dropoff}: {km} km ke ₹{fare}. Book kar dun?",
         "rec_rival": "Estimate ke hisaab se {rival} sasta ho sakta hai (maane hue rates, live price nahi). Chahein to pehle uska app dekh lijiye.",
         "rec_us": "Estimate ke hisaab se yeh Rapido aur Uber se sasta hai (maane hue rates, live price nahi).",
-        "booked": "Book ho gaya! ₹{fare}, {pickup} se {dropoff}. Ab driver dhoondh raha hoon.",
+        "booked": "Book ho gaya! ₹{fare}, {pickup} se {dropoff}. Ab driver dhoondh raha hoon. Main screen par apni ride dekhiye.",
+        "hint_vehicle": "Neeche diye options mein se ek chuniye, ya bol kar bataiye.",
+        "hint_confirm": "Neeche aapke paas do option hain, unme se ek par tap kijiye, ya haan ya nahi bol dijiye.",
+        "go_there": "🚕 {place} chalein",
+        "nearby_found": "Aapke paas yeh {kind} hain: {places}. Jis par tap karenge, wahan le chalunga.",
+        "nearby_town": "{place} ke paas yeh {kind} hain: {places}. Jis par tap karenge, wahan le chalunga.",
+        "nearby_none": "Aapke 15 km ke andar koi {kind} nahi mila.",
+        "no_note": "{place} ke baare mein abhi meri jaankari kam hai, lekin wahan ki ride book kar sakta hoon.",
         "dropped": "Theek hai, yeh trip hata diya. Ab kahan jana hai?",
         "confirm_cancel": "{pickup} se {dropoff} wali ride cancel kar dun?",
         "cancelled": "Aapki ride cancel ho gayi.",
@@ -426,8 +493,8 @@ REPLIES = {
         "where_is": "{place} {town} ke paas hai. Wahan chalein? Bataiye aapko kahan se pick karun.",
         "which_one": "Is naam ki kuch jagahen mili hain. Aap kaunsi keh rahe hain?",
         "best_value": "Sabse sasta {vehicle} hai, ₹{fare} mein, {pickup} se {dropoff}, {km} km. Book kar dun?",
-        "hello": "{greeting} {name} ji! Aaj kahan chalna hai?",
-        "hello_again": "{greeting} {name} ji! Phir se {place}, ya aaj kahin aur?",
+        "hello": "{greeting} {name} ji! Main Raahi hoon, aapka Jammu-Kashmir ka local guide. Bataiye aaj kahan chalna hai? Kisi jagah ya mausam ke baare mein bhi puch sakte hain.",
+        "hello_again": "{greeting} {name} ji! Phir se mil kar achha laga. Phir {place} chalein, ya aaj kahin aur?",
         "locating": "Ji zaroor, abhi dekhta hoon aap kahan hain.",
         "located": "Aap {pickup} ke paas hain.",
         "ask_where": "Apna area ya paas ka koi landmark bataiye, ya main aapki current location le sakta hoon.",
@@ -439,8 +506,8 @@ REPLIES = {
         "btn_here": "📍 Meri current location", "btn_map": "🗺️ Map par chuniye", "btn_home": "🏠 Ghar",
     },
     "hi": {
-        "help": "बताइए कहां जाना है, जैसे \"जम्मू से कटरा कैब\"। मैं जम्मू के मंदिर भी दिखा सकता हूं और बता सकता हूं कि आपकी राइड कहां है।",
-        "greet": "नमस्ते! आपको कहां जाना है?",
+        "help": "मैं आपका लोकल गाइड हूं। बताइए कहां जाना है, जैसे \"जम्मू से कटरा कैब\", या किसी जगह के बारे में पूछिए, जैसे \"कटरा में क्या देखना है\", या आज का मौसम।",
+        "greet": "नमस्ते जी! मैं राही, आपका लोकल गाइड। कहां चलना है?",
         "ask_pickup": "{dropoff} जाना है। आपको कहां से लूं?",
         "ask_dropoff": "{pickup} से पिकअप। कहां जाना है?",
         "ask_vehicle": "{pickup} से {dropoff}, {km} किमी। कौन सी गाड़ी चाहिए?",
@@ -448,7 +515,14 @@ REPLIES = {
         "confirm": "{vehicle}, {pickup} से {dropoff}: {km} किमी के ₹{fare}। बुक कर दूं?",
         "rec_rival": "अनुमान के हिसाब से {rival} सस्ता हो सकता है (मानी गई दरें, लाइव किराया नहीं)। चाहें तो पहले उसका ऐप देख लीजिए।",
         "rec_us": "अनुमान के हिसाब से यह Rapido और Uber से सस्ता है (मानी गई दरें, लाइव किराया नहीं)।",
-        "booked": "बुक हो गया! ₹{fare}, {pickup} से {dropoff}। अब ड्राइवर खोज रहा हूं।",
+        "booked": "बुक हो गया! ₹{fare}, {pickup} से {dropoff}। अब ड्राइवर खोज रहा हूं। मुख्य स्क्रीन पर अपनी राइड देखिए।",
+        "hint_vehicle": "नीचे दिए विकल्पों में से एक चुनिए, या बोलकर बताइए।",
+        "hint_confirm": "नीचे आपके पास दो विकल्प हैं, उनमें से एक पर टैप कीजिए, या हां या नहीं बोल दीजिए।",
+        "go_there": "🚕 {place} चलें",
+        "nearby_found": "आपके पास ये {kind} हैं: {places}। जिस पर टैप करेंगे, वहां ले चलूंगा।",
+        "nearby_town": "{place} के पास ये {kind} हैं: {places}। जिस पर टैप करेंगे, वहां ले चलूंगा।",
+        "nearby_none": "आपके 15 किमी के अंदर कोई {kind} नहीं मिला।",
+        "no_note": "{place} के बारे में अभी मेरी जानकारी कम है, लेकिन वहां की राइड बुक कर सकता हूं।",
         "dropped": "ठीक है, यह यात्रा हटा दी। अब कहां जाना है?",
         "confirm_cancel": "{pickup} से {dropoff} वाली राइड रद्द कर दूं?",
         "cancelled": "आपकी राइड रद्द हो गई।",
@@ -472,8 +546,8 @@ REPLIES = {
         "where_is": "{place} {town} के पास है। वहां चलें? बताइए आपको कहां से लूं।",
         "which_one": "इस नाम की कुछ जगहें मिली हैं। आप कौन सी कह रहे हैं?",
         "best_value": "सबसे सस्ता {vehicle} है, ₹{fare} में, {pickup} से {dropoff}, {km} किमी। बुक कर दूं?",
-        "hello": "{greeting} {name} जी! आज कहां चलना है?",
-        "hello_again": "{greeting} {name} जी! फिर से {place}, या आज कहीं और?",
+        "hello": "{greeting} {name} जी! मैं राही हूं, आपका जम्मू-कश्मीर का लोकल गाइड। बताइए आज कहां चलना है? किसी जगह या मौसम के बारे में भी पूछ सकते हैं।",
+        "hello_again": "{greeting} {name} जी! फिर से मिलकर अच्छा लगा। फिर {place} चलें, या आज कहीं और?",
         "locating": "जी ज़रूर, अभी देखता हूं आप कहां हैं।",
         "located": "आप {pickup} के पास हैं।",
         "ask_where": "अपना इलाका या पास का कोई लैंडमार्क बताइए, या मैं आपकी मौजूदा लोकेशन ले सकता हूं।",
@@ -494,7 +568,14 @@ REPLIES = {
         "confirm": "{vehicle}، {pickup} سے {dropoff}: {km} کلومیٹر کے ₹{fare}۔ بک کر دوں؟",
         "rec_rival": "اندازے کے مطابق {rival} سستا ہو سکتا ہے (فرض کردہ نرخ، لائیو کرایہ نہیں)۔ چاہیں تو پہلے اس کی ایپ دیکھ لیجیے۔",
         "rec_us": "اندازے کے مطابق یہ Rapido اور Uber سے سستا ہے (فرض کردہ نرخ، لائیو کرایہ نہیں)۔",
-        "booked": "بک ہو گیا! ₹{fare}، {pickup} سے {dropoff}۔ اب ڈرائیور ڈھونڈ رہا ہوں۔",
+        "booked": "بک ہو گیا! ₹{fare}، {pickup} سے {dropoff}۔ اب ڈرائیور ڈھونڈ رہا ہوں۔ مین اسکرین پر اپنی سواری دیکھیے۔",
+        "hint_vehicle": "نیچے دیے گئے آپشنز میں سے ایک چنیے، یا بول کر بتائیے۔",
+        "hint_confirm": "نیچے آپ کے پاس دو آپشن ہیں، ان میں سے ایک پر ٹیپ کیجیے، یا ہاں یا نہیں کہہ دیجیے۔",
+        "go_there": "🚕 {place} چلیں",
+        "nearby_found": "آپ کے قریب یہ {kind} ہیں: {places}۔ جس پر ٹیپ کریں گے، وہاں لے چلوں گا۔",
+        "nearby_town": "{place} کے قریب یہ {kind} ہیں: {places}۔ جس پر ٹیپ کریں گے، وہاں لے چلوں گا۔",
+        "nearby_none": "آپ کے 15 کلومیٹر کے اندر کوئی {kind} نہیں ملا۔",
+        "no_note": "{place} کے بارے میں ابھی میری معلومات کم ہیں، لیکن وہاں کی سواری بک کر سکتا ہوں۔",
         "dropped": "ٹھیک ہے، یہ سفر ہٹا دیا۔ اب کہاں جانا ہے؟",
         "confirm_cancel": "{pickup} سے {dropoff} والی سواری منسوخ کر دوں؟",
         "cancelled": "آپ کی سواری منسوخ ہو گئی۔",
@@ -518,8 +599,8 @@ REPLIES = {
         "where_is": "{place} {town} کے پاس ہے۔ وہاں چلیں؟ بتائیے آپ کو کہاں سے لوں۔",
         "which_one": "اس نام کی کچھ جگہیں ملی ہیں۔ آپ کون سی کہہ رہے ہیں؟",
         "best_value": "سب سے سستا {vehicle} ہے، ₹{fare} میں، {pickup} سے {dropoff}، {km} کلومیٹر۔ بک کر دوں؟",
-        "hello": "{greeting} {name} صاحب! آج کہاں چلنا ہے؟",
-        "hello_again": "{greeting} {name} صاحب! پھر سے {place}، یا آج کہیں اور؟",
+        "hello": "{greeting} {name} صاحب! میں راہی ہوں، آپ کا جموں و کشمیر کا مقامی گائیڈ۔ بتائیے آج کہاں چلنا ہے؟ کسی جگہ یا موسم کے بارے میں بھی پوچھ سکتے ہیں۔",
+        "hello_again": "{greeting} {name} صاحب! پھر مل کر اچھا لگا۔ پھر {place} چلیں، یا آج کہیں اور؟",
         "locating": "جی ضرور، ابھی دیکھتا ہوں آپ کہاں ہیں۔",
         "located": "آپ {pickup} کے پاس ہیں۔",
         "ask_where": "اپنا علاقہ یا قریب کا کوئی نشان بتائیے، یا میں آپ کی موجودہ لوکیشن لے سکتا ہوں۔",
@@ -531,6 +612,20 @@ REPLIES = {
         "btn_here": "📍 میری موجودہ لوکیشن", "btn_map": "🗺️ نقشے پر چنیں", "btn_home": "🏠 گھر",
     },
 }
+
+FAITH_NAMES = {
+    "en": {"temple": "temples", "mosque": "mosques", "gurudwara": "gurudwaras"},
+    "hinglish": {"temple": "mandir", "mosque": "masjidein", "gurudwara": "gurudware"},
+    "hi": {"temple": "मंदिर", "mosque": "मस्जिदें", "gurudwara": "गुरुद्वारे"},
+    "ur": {"temple": "مندر", "mosque": "مساجد", "gurudwara": "گردوارے"},
+}
+AND = {"en": "and", "hinglish": "aur", "hi": "और", "ur": "اور"}
+
+
+def spoken_list(lang: str, items: list) -> str:
+    """"A, B and C", the way it is said in each language."""
+    return items[0] if len(items) == 1 else f"{', '.join(items[:-1])} {AND[lang]} {items[-1]}"
+
 
 BUTTON_LABELS = {
     "en": {"yes": "Yes, book it", "no": "No"},

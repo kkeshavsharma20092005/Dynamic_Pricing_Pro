@@ -156,4 +156,34 @@ def is_clear_winner(results: list) -> bool:
     return not far or first["score"] - second["score"] >= 2
 
 
+# Places of worship are one kind in the map data; their names tell the faith apart.
+FAITH_WORDS = {
+    "mosque": ("masjid", "mosque", "jamia", "مسجد", "मस्जिद"),
+    "gurudwara": ("gurdwara", "gurudwara", "گردوارہ", "गुरुद्वारा"),
+    "church": ("church", "चर्च"),
+    "dargah": ("dargah", "ziyarat", "درگاہ", "زیارت", "दरगाह"),
+    "temple": ("temple", "mandir", "mata", "devi", "dham", "shiv", "bhawan", "bhavan", "मंदिर", "माता", "देवी", "धाम", "शिव", "مندر"),
+}
+
+
+def faith_of(row: dict) -> str | None:
+    names = " ".join(" ".join(form) for form in row["forms"]) + " " + row["name"].lower()
+    for faith, words in FAITH_WORDS.items():          # temple last: "Mata" can appear in other names
+        if any(word in names for word in words):
+            return faith
+    return None
+
+
+def nearby_worship(lat: float, lon: float, faith: str, limit: int = 6, radius_km: float = 15) -> list:
+    """The nearest temples (or mosques, gurudwaras) to a point, closest first, with straight-line km."""
+    found = []
+    for row in _rows:
+        # A bare "Mandir" or "Masjid" on the map can't be told apart from its neighbours.
+        if row["kind"] == "worship" and faith_of(row) == faith and set(row["forms"][0]) - GENERIC:
+            km = distance_km(lat, lon, row["lat"], row["lon"])
+            if km <= radius_km:
+                found.append({"name": row["name"], "lat": row["lat"], "lon": row["lon"], "km": round(km, 1)})
+    return sorted(found, key=lambda r: r["km"])[:limit]
+
+
 _load()

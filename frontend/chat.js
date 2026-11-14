@@ -70,6 +70,15 @@ function makeVoice({ onInterim, onFinal, onState }) {
           headers: { "Content-Type": audio.type.split(";")[0], Authorization: "Bearer " + token() },
         });
         const data = await response.json().catch(() => null);
+        // Out of Sarvam credits, over today's limit or Sarvam down: carry on with the browser's
+        // free speech for the rest of this visit, so voice never costs money or stops working.
+        if ((response.status === 503 || response.status === 429) && Recognition) {
+          sarvam.on = false;
+          sarvam.speaks = [];
+          onInterim("");
+          toast("Switched to the browser's free voice. Tap 🎤 and speak again.");
+          return;
+        }
         if (!response.ok) throw new Error((data && data.detail) || "Voice isn't working right now.");
         onInterim("");
         if (data.text) onFinal(data.text);
@@ -171,9 +180,26 @@ function makeVoice({ onInterim, onFinal, onState }) {
 
 const warnedNoVoice = {};
 let chatPinHandler = null;
+// Set by setupChat; rider.js calls it when a driver accepts the ride.
+let announceDriver = null;
+const DRIVER_ASSIGNED = {
+  en: (name, eta) => `${name} is your driver and is on the way to your pickup location${eta ? `, about ${eta} min away` : ""}.`,
+  hinglish: (name, eta) => `Aapko ${name} naam ka driver assign hua hai, aur woh aapki pickup location par aa rahe hain${eta ? `, lagbhag ${eta} minute mein` : ""}.`,
+  hi: (name, eta) => `आपको ${name} नाम का ड्राइवर असाइन हुआ है, और वह आपकी पिकअप लोकेशन पर आ रहे हैं${eta ? `, लगभग ${eta} मिनट में` : ""}।`,
+  ur: (name, eta) => `آپ کو ${name} نام کا ڈرائیور ملا ہے، اور وہ آپ کی پک اپ لوکیشن پر آ رہے ہیں${eta ? `، تقریباً ${eta} منٹ میں` : ""}۔`,
+};
+// Already allowed location? Then the app can answer "where should I pick you up?" by itself.
+const locationAllowed = async () => {
+  try {
+    return navigator.permissions && (await navigator.permissions.query({ name: "geolocation" })).state === "granted";
+  } catch {
+    return false;
+  }
+};
 
 function setupChat() {
   let voiceLang = lang() === "hi" ? "hi" : "en";
+  let replyLang = voiceLang;      // the language the assistant last replied in
   let idlePlaceholder = "English, हिंदी, اردو…";
   let speakReplies = true;
   let greeted = false;
@@ -264,14 +290,14 @@ function setupChat() {
     log.scrollTop = log.scrollHeight;
   }
 
-  function askForLocation(reply) {
+  function askForLocation(reply, fromVoice = false) {
     if (!navigator.geolocation) {
       bubble(t("Location isn't available in this browser."));
       if (reply.failed_buttons) chips(reply.failed_buttons);
       return;
     }
     navigator.geolocation.getCurrentPosition(
-      pos => send("", null, { location: { lat: pos.coords.latitude, lon: pos.coords.longitude }, target: reply.need_location }),
+      pos => send("", null, { location: { lat: pos.coords.latitude, lon: pos.coords.longitude }, target: reply.need_location }, fromVoice),
       () => {
         bubble(t("I couldn't get your location. Please allow location access, or tell me your area."));
         if (reply.failed_buttons) chips(reply.failed_buttons);
@@ -300,8 +326,11 @@ function setupChat() {
     }
   }
 
-  function showReply(reply, fromVoice) {
+  // quiet: show the reply but don't read it or offer its buttons, because the app is about to
+  // answer it itself (with the rider's location).
+  function showReply(reply, fromVoice, quiet = false) {
     bubble(reply.text);
+    if (reply.lang) replyLang = reply.lang;
     // Roman Hindi is spoken Hindi, so the microphone should listen for Hindi.
     const heard = reply.lang === "hinglish" ? "hi" : reply.lang;
     // The assistant replies to Dogri and Kashmiri in Hindi or Urdu; the rider still speaks their own.
@@ -310,13 +339,23 @@ function setupChat() {
       voiceLang = heard;
       languagePicker.value = heard;
     }
-    say(reply, fromVoice);
+    if (!quiet) say(reply, fromVoice);
     if (reply.note) log.append(el("div", { class: "muted chat-note", dir: "auto" }, reply.note));
     if (reply.call) location.href = `tel:+91${reply.call}`;
     if (reply.temples) temples(reply.temples.map(photoById).filter(Boolean));
-    if (reply.buttons) chips(reply.buttons);
+    if (reply.buttons && !quiet) chips(reply.buttons);
     log.scrollTop = log.scrollHeight;
   }
+
+  // Said aloud and shown when a driver accepts, so a rider who booked by voice hears it too.
+  announceDriver = ride => {
+    if (!greeted || !ride.driver) return;
+    const minutes = ride.driver.to_pickup && Math.max(1, Math.round(ride.driver.to_pickup.minutes));
+    const lang = DRIVER_ASSIGNED[replyLang] ? replyLang : "en";
+    const text = DRIVER_ASSIGNED[lang](ride.driver.name, minutes);
+    bubble(text);
+    say({ text, lang }, false);
+  };
 
   async function send(text, shown, extra = {}, fromVoice = false) {
     // Earlier suggestions no longer fit once the conversation has moved on.
@@ -329,8 +368,9 @@ function setupChat() {
       const reply = await api("/chat", { method: "POST", body: { message: text, ...extra,
         ...(typeof isWomenMode === "function" && isWomenMode() ? { women_only: true } : {}) } });
       waiting.remove();
-      showReply(reply, fromVoice);
-      if (reply.need_location) askForLocation(reply);
+      const autoLocate = reply.ask_location && await locationAllowed();
+      showReply(reply, fromVoice, autoLocate);
+      if (reply.need_location) askForLocation(reply, fromVoice);
       if (reply.cleared) resetBooking();
       if (!reply.ride && (reply.pickup || reply.dropoff)) {
         // The panel shows the same trip as the conversation, whichever one changed it.
@@ -345,6 +385,7 @@ function setupChat() {
         }
         renderBooking();
       }
+      if (autoLocate) askForLocation({ need_location: "pickup", failed_buttons: reply.buttons }, fromVoice);
       if (reply.ride) showRide(reply.ride);
       else if (reply.refresh) api("/rides/active").then(r => r ? showRide(r) : resetBooking()).catch(() => {});
     } catch (e) {

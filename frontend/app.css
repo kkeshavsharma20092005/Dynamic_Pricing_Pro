@@ -325,11 +325,11 @@ tr.not-counted td { opacity: .5; }
 .auth-note { padding: 10px 12px; border-radius: 10px; color: var(--good); background: var(--accent-soft); font-size: 14px; font-weight: 500; }
 
 /* ---------- help during a ride ---------- */
-.help-open { position: fixed; z-index: 1500; top: calc(var(--topbar) + 14px); right: 14px; width: auto; min-height: 48px;
+.help-open { position: fixed; z-index: 2500; top: calc(var(--topbar) + 14px); right: 14px; width: auto; min-height: 48px;
              padding: 0 18px; border-radius: 99px; font-size: 16px; color: #fff; background: var(--danger); box-shadow: var(--shadow-lg); }
 .help-open:not(:disabled):hover { background: #a82222; }
 .help-open.below-assistant { top: calc(var(--topbar) + 76px); }
-.help-sheet { position: fixed; z-index: 1700; right: 16px; top: calc(var(--topbar) + 12px); display: flex; flex-direction: column;
+.help-sheet { position: fixed; z-index: 2600; right: 16px; top: calc(var(--topbar) + 12px); display: flex; flex-direction: column;
               width: min(400px, calc(100vw - 24px)); max-height: calc(100dvh - var(--topbar) - 24px); overflow: hidden;
               background: #fff; border-radius: 16px; box-shadow: 0 16px 50px rgba(0, 0, 0, .25); animation: rise .2s ease; }
 .help-body { overflow-y: auto; padding: 14px; }

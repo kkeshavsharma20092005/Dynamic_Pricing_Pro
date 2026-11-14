@@ -612,7 +612,11 @@ function onLive(event) {
       showPaymentReceived(paid, () => { if (paid.driver && !paid.feedback) showFeedback(paid); });
     }
   } else if (event.type === "confirmed") {
-    if (!ride || ride.id === event.ride.id) { showRide(event.ride); showConfirmed(event.ride); }
+    if (!ride || ride.id === event.ride.id) {
+      showRide(event.ride);
+      showConfirmed(event.ride);
+      if (announceDriver) announceDriver(event.ride);      // the assistant says who is coming
+    }
   } else if (event.type === "position" && ride && ride.id === event.ride_id) {
     moveDriver(event);
   } else if (event.type === "message" && ride && ride.id === event.message.ride_id && addMessage) {
