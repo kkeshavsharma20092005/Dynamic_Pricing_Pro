@@ -30,7 +30,7 @@ editable demo assumption, not real company accounts.
 | **Fair pricing** | A demand model and optimizer set the fare; a limit caps it, lower during snow, storms and closures. Every fare explains what raised it. |
 | **Business model** | The admin panel splits every fare into GST, Raahi's commission, the driver's payout and fuel, and Raahi's own costs, and shows profit per ride and per vehicle. All rates are editable demo assumptions. |
 | **Built for J&K** | Regional weather, road closures, yatra seasons, shared cabs, ~16,800 bookable J&K places, and an offline app shell for weak networks. |
-| **Booking assistant** | Books by text or voice in English, Hindi and Urdu, and only after the rider says yes. |
+| **Booking assistant** | Books by text or voice in English, Hindi and Urdu, and only after the rider says yes. With Sarvam AI it also hears Dogri and Kashmiri. |
 | **Email updates** | Welcome emails, "application received" and approval or rejection emails for drivers, and password reset codes. |
 | **Tested** | 140+ automated tests run the real app end to end against a throwaway database. |
 
@@ -210,6 +210,16 @@ past trips and Jammu's temples. A spoken booking still needs an explicit yes. Vo
 built-in speech features, so it needs Chrome or Edge to listen, may send audio to the browser's speech
 service, and on a phone needs HTTPS. Reading Urdu aloud depends on the device having an Urdu voice;
 without one, replies stay as text.
+
+**Voice through Sarvam AI (optional):** set `SARVAM_API_KEY` (a key from
+[dashboard.sarvam.ai](https://dashboard.sarvam.ai)) and the app records the rider and the server sends
+the recording to Sarvam's Saaras model, which also understands **Dogri and Kashmiri**, works in any
+browser, and tells languages apart by itself (the picker adds डोगरी and کٲشُر). Sarvam's Bulbul voices
+read Hindi and English replies aloud; Urdu replies are still read by the device, or shown as text. The
+key never reaches the browser. Each rider gets `VOICE_DAILY_LIMIT` Sarvam calls a day (default 80), and
+if Sarvam is missing, failing or over the limit, the app falls back to the browser's speech. The
+assistant's rules understand English, Hindi and Urdu, so Dogri and Kashmiri requests work as far as
+their words and place names overlap with Hindi and Urdu.
 
 **Addresses:** riders can name a neighbourhood or lane, such as `bharat nagar talab tillo se roop nagar`,
 or say `meri current location se`, in which case the browser asks for permission and shares the position.

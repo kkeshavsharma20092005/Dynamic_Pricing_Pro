@@ -1,13 +1,23 @@
 // The booking assistant. It works in the rider app and drives the same map and trip screen.
 const SPEECH_LANG = { en: "en-IN", hinglish: "hi-IN", hi: "hi-IN", ur: "ur-IN" };
 const VOICE_LANGUAGES = [["en", "English"], ["hi", "हिंदी"], ["ur", "اردو"]];
+// Only Sarvam hears these two, so they are offered once the server says Sarvam is on.
+const SARVAM_ONLY_LANGUAGES = [["doi", "डोगरी"], ["ks", "کٲشُر"]];
 const CHAT_EXAMPLES = ["Bharat Nagar to Roop Nagar", "मुझे मेरी लोकेशन से कटरा जाना है", "مجھے جموں سے کٹرہ جانا ہے", "Jammu ke mandir dikhao"];
+const RECORD_LIMIT_MS = 15000;     // Sarvam's quick API takes up to 30 seconds; a request needs far less
+const SILENCE_MS = 1400;           // this long a pause after speaking ends the recording
+const NO_SPEECH_MS = 7000;         // give up if nothing is said for this long
 
-// Both voice features are built into the browser, so this adds no dependency. Listening
-// exists only in some browsers, which usually send the audio to their speech service.
+// Two ways to listen and speak. With SARVAM_API_KEY set on the server, the app records the
+// rider, the server sends the recording to Sarvam AI (Hindi, Urdu, Dogri, Kashmiri, English),
+// and Sarvam reads Hindi and English replies aloud. Otherwise, or whenever Sarvam fails, the
+// browser's own speech features are used, as before.
 function makeVoice({ onInterim, onFinal, onState }) {
   const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const canRecord = !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia && window.MediaRecorder);
+  const sarvam = { on: false, speaks: [] };
   let listening = null;
+  let playing = null;
 
   // Cloud and neural voices sound far more like a person than the older local ones.
   function voiceFor(tag) {
@@ -17,47 +27,145 @@ function makeVoice({ onInterim, onFinal, onState }) {
     return speechSynthesis.getVoices().filter(v => v.lang.startsWith(prefix)).sort((a, b) => score(b) - score(a))[0];
   }
 
+  // Records until the rider stops talking, taps the mic again, or the time limit.
+  async function record(langHint) {
+    let stream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch {
+      toast("Please allow the microphone for this site.");
+      return;
+    }
+    const recorder = new MediaRecorder(stream);
+    const chunks = [];
+    let heardSpeech = false;
+    let quietSince = Date.now();
+    const started = Date.now();
+    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    const analyser = audioContext.createAnalyser();
+    audioContext.createMediaStreamSource(stream).connect(analyser);
+    const samples = new Float32Array(analyser.fftSize);
+    const stop = () => recorder.state === "recording" && recorder.stop();
+    const watch = setInterval(() => {
+      analyser.getFloatTimeDomainData(samples);
+      const level = Math.sqrt(samples.reduce((sum, v) => sum + v * v, 0) / samples.length);
+      const now = Date.now();
+      if (level > 0.02) { heardSpeech = true; quietSince = now; }
+      if ((heardSpeech && now - quietSince > SILENCE_MS) || (!heardSpeech && now - started > NO_SPEECH_MS)
+          || now - started > RECORD_LIMIT_MS) stop();
+    }, 100);
+    recorder.ondataavailable = event => event.data.size && chunks.push(event.data);
+    recorder.onstop = async () => {
+      clearInterval(watch);
+      stream.getTracks().forEach(track => track.stop());
+      audioContext.close();
+      listening = null;
+      onState(false);
+      if (!heardSpeech) { toast("I didn't hear anything. Please try again."); return; }
+      const audio = new Blob(chunks, { type: recorder.mimeType || "audio/webm" });
+      onInterim("…");
+      try {
+        const response = await fetch(`/api/voice/listen?lang=${encodeURIComponent(langHint)}`, {
+          method: "POST", body: audio,
+          headers: { "Content-Type": audio.type.split(";")[0], Authorization: "Bearer " + token() },
+        });
+        const data = await response.json().catch(() => null);
+        if (!response.ok) throw new Error((data && data.detail) || "Voice isn't working right now.");
+        onInterim("");
+        if (data.text) onFinal(data.text);
+        else toast("I couldn't make out the words. Please try again.");
+      } catch (e) {
+        onInterim("");
+        toast(e.message);
+      }
+    };
+    listening = { stop };
+    onState(true);
+    recorder.start();
+  }
+
+  function browserListen(lang) {
+    const recognition = new Recognition();
+    recognition.lang = SPEECH_LANG[lang] || "hi-IN";
+    recognition.interimResults = true;
+    recognition.onresult = event => {
+      const result = event.results[event.results.length - 1];
+      if (result.isFinal) onFinal(result[0].transcript.trim());
+      else onInterim(result[0].transcript);
+    };
+    recognition.onerror = event => {
+      if (event.error === "not-allowed" || event.error === "service-not-allowed") toast("Please allow the microphone for this site.");
+      else if (event.error === "no-speech") toast("I didn't hear anything. Please try again.");
+      else if (event.error !== "aborted") toast(`Voice input failed: ${event.error}`);
+    };
+    recognition.onend = () => { listening = null; onState(false); };
+    listening = recognition;
+    onState(true);
+    recognition.start();
+  }
+
+  // False when this device has no voice for the language, such as Urdu on many computers.
+  function browserSpeak(text, lang, onDone) {
+    if (!("speechSynthesis" in window)) return false;
+    const tag = SPEECH_LANG[lang] || "en-IN";
+    // Roman Hindi is in Latin letters, so an Indian English voice can still read it.
+    const voice = voiceFor(tag) || (lang === "hinglish" ? voiceFor("en-IN") : null);
+    if (!voice) return false;
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = tag;
+    utterance.voice = voice;
+    utterance.rate = 1;
+    utterance.pitch = 1;
+    utterance.onend = () => onDone && onDone();
+    speechSynthesis.cancel();
+    speechSynthesis.speak(utterance);
+    return true;
+  }
+
+  function stopSpeaking() {
+    if (playing) { playing.pause(); playing = null; }
+    if ("speechSynthesis" in window) speechSynthesis.cancel();
+  }
+
+  async function sarvamSpeak(text, lang, onDone) {
+    const reply = await api("/voice/speak", { method: "POST", body: { text: text.slice(0, 1500), lang } });
+    if (!reply.audio) throw new Error("no Sarvam voice for this language");
+    stopSpeaking();
+    playing = new Audio(`data:${reply.type};base64,${reply.audio}`);
+    playing.onended = () => { playing = null; onDone && onDone(); };
+    await playing.play();
+  }
+
   return {
-    canListen: !!Recognition,
-    canSpeak: "speechSynthesis" in window,
-    listen(lang) {
+    sarvam,
+    get canListen() { return (sarvam.on && canRecord) || !!Recognition; },
+    get canSpeak() { return sarvam.on || "speechSynthesis" in window; },
+    // Asks the server once whether Sarvam is set up.
+    async check() {
+      try {
+        const status = await api("/voice/status");
+        sarvam.on = !!status.sarvam;
+        sarvam.speaks = status.speak || [];
+      } catch {
+        sarvam.on = false;
+      }
+      return sarvam.on;
+    },
+    listen(lang, langHint = "unknown") {
       if (listening) { listening.stop(); return; }
-      speechSynthesis?.cancel();
-      const recognition = new Recognition();
-      recognition.lang = SPEECH_LANG[lang];
-      recognition.interimResults = true;
-      recognition.onresult = event => {
-        const result = event.results[event.results.length - 1];
-        if (result.isFinal) onFinal(result[0].transcript.trim());
-        else onInterim(result[0].transcript);
-      };
-      recognition.onerror = event => {
-        if (event.error === "not-allowed" || event.error === "service-not-allowed") toast("Please allow the microphone for this site.");
-        else if (event.error === "no-speech") toast("I didn't hear anything. Please try again.");
-        else if (event.error !== "aborted") toast(`Voice input failed: ${event.error}`);
-      };
-      recognition.onend = () => { listening = null; onState(false); };
-      listening = recognition;
-      onState(true);
-      recognition.start();
+      stopSpeaking();
+      if (sarvam.on && canRecord) record(langHint);
+      else if (Recognition) browserListen(lang);
     },
-    // False when this device has no voice for the language, such as Urdu on many computers.
+    // False when no voice is available for the language, so the reply stays text only.
     speak(text, lang, onDone) {
-      const tag = SPEECH_LANG[lang] || "en-IN";
-      // Roman Hindi is in Latin letters, so an Indian English voice can still read it.
-      const voice = voiceFor(tag) || (lang === "hinglish" ? voiceFor("en-IN") : null);
-      if (!voice) return false;
-      const utterance = new SpeechSynthesisUtterance(text);
-      utterance.lang = tag;
-      utterance.voice = voice;
-      utterance.rate = 1;
-      utterance.pitch = 1;
-      utterance.onend = () => onDone && onDone();
-      speechSynthesis.cancel();
-      speechSynthesis.speak(utterance);
-      return true;
+      if (sarvam.on && sarvam.speaks.includes(lang)) {
+        sarvamSpeak(text, lang, onDone).catch(() => browserSpeak(text, lang, onDone));
+        return true;
+      }
+      return browserSpeak(text, lang, onDone);
     },
-    stopSpeaking() { speechSynthesis?.cancel(); },
+    stopSpeaking,
   };
 }
 
@@ -66,6 +174,7 @@ let chatPinHandler = null;
 
 function setupChat() {
   let voiceLang = lang() === "hi" ? "hi" : "en";
+  let idlePlaceholder = "English, हिंदी, اردو…";
   let speakReplies = true;
   let greeted = false;
   const voice = makeVoice({
@@ -74,13 +183,18 @@ function setupChat() {
     onState: on => {
       micButton.classList.toggle("listening", on);
       micButton.setAttribute("aria-pressed", String(on));
-      input.placeholder = on ? "Listening… सुन रहा हूं… سن رہا ہوں…" : "English, हिंदी, اردو…";
+      input.placeholder = on ? "Listening… सुन रहा हूं… سن رہا ہوں…" : idlePlaceholder;
     },
   });
   const languagePicker = el("select", {
     class: "voice-lang", "aria-label": "Language you will speak",
-    onchange: event => { voiceLang = event.target.value; },
+    onchange: event => { voiceLang = event.target.value; pickedLanguage = true; },
   }, VOICE_LANGUAGES.map(([code, label]) => el("option", { value: code, selected: code === voiceLang }, label)));
+  // Sarvam works out the language itself unless the rider chose one, which helps it tell
+  // Dogri from Hindi.
+  let pickedLanguage = false;
+  const listenNow = () => voice.listen(voiceLang, pickedLanguage ? voiceLang : "unknown");
+  const languagesLine = el("div", { class: "muted" }, "English · हिंदी · اردو");
   const speakerButton = el("button", {
     type: "button", class: "assistant-close", "aria-label": "Read replies aloud", "aria-pressed": "true", title: "Read replies aloud",
     onclick: () => {
@@ -91,11 +205,11 @@ function setupChat() {
     },
   }, "🔊");
   const log = el("div", { class: "chat-log", "aria-live": "polite" });
-  const micButton = el("button", { type: "button", class: "mic", "aria-label": "Speak your request", title: "Speak", onclick: () => voice.listen(voiceLang) }, "🎤");
+  const micButton = el("button", { type: "button", class: "mic", "aria-label": "Speak your request", title: "Speak", onclick: listenNow }, "🎤");
   const input = el("input", { placeholder: "English, हिंदी, اردو…", maxLength: 500, "aria-label": "Message the assistant", dir: "auto" });
   const sheet = el("section", { id: "assistant", class: "assistant hidden", "aria-label": "Booking assistant" },
     el("header", { class: "assistant-head" },
-      el("div", {}, el("strong", {}, "Ride assistant"), el("div", { class: "muted" }, "English · हिंदी · اردو")),
+      el("div", {}, el("strong", {}, "Ride assistant"), languagesLine),
       el("div", { class: "voice-controls" }, languagePicker, speakerButton),
       el("button", { type: "button", class: "assistant-close", "aria-label": "Close assistant", onclick: () => toggle(false) }, "×")),
     log,
@@ -178,7 +292,7 @@ function setupChat() {
     if (!speakReplies || !voice.canSpeak) return;
     // Keep the conversation going by voice, except at "shall I book?", which needs a tap on
     // the mic, so background noise can't be heard as a yes.
-    const carryOn = fromVoice && reply.listen && voice.canListen ? () => voice.listen(voiceLang) : null;
+    const carryOn = fromVoice && reply.listen && voice.canListen ? listenNow : null;
     const spoke = voice.speak(reply.speech || reply.text, reply.lang, carryOn);
     if (!spoke && !warnedNoVoice[reply.lang]) {
       warnedNoVoice[reply.lang] = true;
@@ -190,7 +304,9 @@ function setupChat() {
     bubble(reply.text);
     // Roman Hindi is spoken Hindi, so the microphone should listen for Hindi.
     const heard = reply.lang === "hinglish" ? "hi" : reply.lang;
-    if ([...languagePicker.options].some(o => o.value === heard)) {
+    // The assistant replies to Dogri and Kashmiri in Hindi or Urdu; the rider still speaks their own.
+    const keepPicked = pickedLanguage && (voiceLang === "doi" || voiceLang === "ks");
+    if (!keepPicked && [...languagePicker.options].some(o => o.value === heard)) {
       voiceLang = heard;
       languagePicker.value = heard;
     }
@@ -237,12 +353,20 @@ function setupChat() {
     }
   }
 
-  if (!voice.canListen) {
-    micButton.classList.add("hidden");
-    log.append(el("div", { class: "muted chat-note" }, "Voice input isn't available in this browser. Chrome or Edge support it."));
-  }
+  voice.check().then(sarvamOn => {
+    if (sarvamOn) {
+      languagePicker.append(...SARVAM_ONLY_LANGUAGES.map(([code, label]) => el("option", { value: code }, label)));
+      languagesLine.textContent = "English · हिंदी · اردو · डोगरी · کٲشُر";
+      idlePlaceholder = "English, हिंदी, اردو, डोगरी…";
+      input.placeholder = idlePlaceholder;
+    }
+    if (!voice.canListen) {
+      micButton.classList.add("hidden");
+      log.append(el("div", { class: "muted chat-note" }, "Voice input isn't available in this browser. Chrome or Edge support it."));
+    }
+  });
   // Voices load late in some browsers; asking now makes them ready for the first reply.
-  if (voice.canSpeak) speechSynthesis.getVoices();
+  if ("speechSynthesis" in window) speechSynthesis.getVoices();
   async function greet() {
     greeted = true;
     try {

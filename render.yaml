@@ -37,6 +37,9 @@ services:
         sync: false
       - key: MAIL_FROM
         sync: false
+      # Voice through Sarvam AI (optional): hears Hindi, Urdu, Dogri, Kashmiri and English.
+      - key: SARVAM_API_KEY
+        sync: false
       - key: SMTP_HOST
         sync: false
       - key: SMTP_PORT

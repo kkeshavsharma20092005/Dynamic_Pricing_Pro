@@ -21,6 +21,7 @@ import appdb
 import kyc
 import payments
 import rides
+import voice
 from config import METRICS_JSON, MODEL_PKL, PRODUCTS
 from engine import PricingEngine
 from schemas import ModelMetrics, PredictRequest, PredictResponse
@@ -79,6 +80,7 @@ app.add_middleware(
 app.include_router(rides.router)
 app.include_router(kyc.router)
 app.include_router(payments.router)
+app.include_router(voice.router)
 
 
 @app.post("/predict/", response_model=PredictResponse, tags=["pricing"])
