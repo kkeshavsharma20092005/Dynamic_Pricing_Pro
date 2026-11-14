@@ -17,7 +17,11 @@ const STRINGS = {
     "Password": "पासवर्ड", "Your name": "आपका नाम", "Log out": "लॉग आउट",
     "New here? Create an account": "नए हैं? खाता बनाएं", "Have an account? Log in": "खाता है? लॉग इन करें",
     "Pickup": "पिकअप", "Drop-off": "ड्रॉप", "Choose a place": "जगह चुनें",
-    "Use my location": "मेरी लोकेशन", "Tap the map to set a pin": "मैप पर टैप करके जगह चुनें",
+    "Use my location": "मेरी लोकेशन", "House no., block or gate (optional)": "मकान नंबर, ब्लॉक या गेट (वैकल्पिक)",
+    "Finding your exact location…": "आपकी सटीक लोकेशन खोज रहे हैं…", "Location accurate to about": "लोकेशन लगभग इतनी सटीक है:",
+    "Tap the map to correct it.": "ठीक करने के लिए मैप पर टैप करें।", "Type the place name…": "जगह का नाम लिखिए…",
+    "Using your current location:": "आपकी मौजूदा लोकेशन इस्तेमाल हो रही है:", "Pickup in use:": "इस्तेमाल हो रहा पिकअप:",
+    "Drop-off in use:": "इस्तेमाल हो रहा ड्रॉप:", "accurate to about": "लगभग इतनी सटीक:", "Map pin": "मैप पिन", "Tap the map to set a pin": "मैप पर टैप करके जगह चुनें",
     "See fares": "किराया देखें", "Book": "बुक करें", "Cancel ride": "राइड रद्द करें",
     "Why this fare": "यह किराया क्यों", "Normal fare": "सामान्य किराया",
     "Fair-price limit applied": "उचित मूल्य सीमा लागू", "saved": "बचत",
@@ -716,7 +720,8 @@ function updateRideHelp(ride, role) {
   if (!helpRide) helpUi.close();
 }
 
-const placeLabel = p => (p && p.name) || "Map pin";
+// A place as written for people: its name, then any house number or gate the rider added.
+const placeLabel = p => ((p && p.name) || "Map pin") + (p && p.details ? ` · ${p.details}` : "");
 
 async function shareTrip() {
   const r = helpRide;

@@ -37,6 +37,18 @@ LABELS = {"worship": "Temple or shrine", "city": "City", "town": "Town", "villag
           "townhall": "Town hall", "cinema": "Cinema", "library": "Library", "kindergarten": "School",
           "isolated_dwelling": "Settlement", "locality": "Locality", "suburb": "Area", "neighbourhood": "Area",
           "quarter": "Area", "landmark": "Landmark", "amenity": "Landmark"}
+# Short names riders use for institutions whose map name is long. Only places in the data.
+SHORT_NAMES = {
+    "Indian Institute of Technology Jammu": ["iit jammu", "iit", "आईआईटी जम्मू", "आईआईटी"],
+    "Model Institute of Engineering and Technology": ["miet jammu", "miet", "एमआईईटी"],
+    "University of Jammu": ["jammu university", "ju jammu"],
+    "Shri Mata Vaishno Devi University": ["smvdu", "vaishno devi university", "katra university"],
+    "Govt Gandhi Memorial Science College": ["ggm science college", "ggm college", "science college jammu"],
+    "National Institute of Technology, Srinagar": ["nit srinagar"],
+    "Sher-e-Kashmir University of Agricultural Sciences and Technology of Kashmir": ["skuast kashmir", "skuast"],
+}
+# Kinds that name where a place is: a result is labelled with the nearest of these.
+SETTLEMENT_KINDS = {"city", "town", "suburb", "neighbourhood", "quarter", "village", "locality"}
 URDU_SOUNDS = str.maketrans({
     "ب": "b", "پ": "p", "ت": "t", "ٹ": "t", "ث": "s", "ج": "j", "چ": "c", "خ": "k", "د": "d", "ڈ": "d", "ذ": "z",
     "ر": "r", "ڑ": "r", "ز": "z", "ژ": "z", "س": "s", "ش": "s", "ص": "s", "ض": "z", "ط": "t", "ظ": "z", "ف": "f",
@@ -44,6 +56,7 @@ URDU_SOUNDS = str.maketrans({
     "ا": "", "آ": "", "ع": "", "ء": "", "ئ": "", "ی": "", "ے": ""})
 
 _rows: list = []
+_settlements: list = []
 _by_sound: dict = {}
 _by_word: dict = {}
 
@@ -72,8 +85,10 @@ def _load():
     rows += [[f"{name}, {city}", lat, lon, "neighbourhood", aliases] for name, city, lat, lon, aliases in LOCALITIES]
     for i, (name, lat, lon, kind, others) in enumerate(rows):
         words = [t for t in normalise(name) if t not in CITY_WORDS or len(normalise(name)) == 1]
-        forms = [words] + [normalise(o) for o in others]
+        forms = [words] + [normalise(o) for o in list(others) + SHORT_NAMES.get(name, [])]
         _rows.append({"name": name, "lat": lat, "lon": lon, "kind": kind, "forms": forms})
+        if kind in SETTLEMENT_KINDS:
+            _settlements.append(_rows[-1])
         for form in forms:
             for token in form:
                 _by_word.setdefault(token, set()).add(i)
@@ -87,7 +102,7 @@ def _candidates(token: str, strict: bool) -> tuple:
     exact = _by_word.get(token, set())
     sounds = set()
     for sound in sounds_of(token):
-        if len(sound) >= 2 or not strict:
+        if len(sound) >= 2:
             sounds |= _by_sound.get(sound, set())
     return exact, sounds
 
@@ -131,20 +146,44 @@ def search(text: str, near: dict | None = None, strict: bool = False, limit: int
         if any([t for t in form if t not in GENERIC] == required for form in row["forms"]):
             score += 6
         away = distance_km(near["lat"], near["lon"], row["lat"], row["lon"]) if near else 0
-        results.append((score - min(away / 25, 6), row))
+        results.append((score - min(away / 25, 6), exact_words, row))
     results.sort(key=lambda r: -r[0])
+    # When some place has every word exactly, sound-alikes are noise: "iit jammu" is IIT Jammu,
+    # not a mosque whose name merely sounds a little like it.
+    if any(exact == len(required) for _, exact, _ in results):
+        results = [r for r in results if r[1] == len(required)]
 
     unique = []
-    for score, row in results:
+    for score, exact, row in results:
         if any(u["name"] == row["name"] and distance_km(u["lat"], u["lon"], row["lat"], row["lon"]) < 1 for u in unique):
             continue
-        town = nearest_place(row["lat"], row["lon"])["name"]
+        town = area_label(row["lat"], row["lon"], row["name"])
         unique.append({"lat": row["lat"], "lon": row["lon"], "name": row["name"], "score": round(score, 1),
-                       "kind": row["kind"], "town": town, "approx": False,
-                       "detail": f"{LABELS.get(row['kind'], 'Place')} near {town}"})
+                       "kind": row["kind"], "town": town, "approx": False, "exact": exact == len(required),
+                       "detail": f"{LABELS.get(row['kind'], 'Place')} · {town}"})
         if len(unique) == limit:
             break
     return unique
+
+
+def area_label(lat: float, lon: float, own_name: str = "") -> str:
+    """Where a place is, in words a local would use: the nearest village, area or town ("near Jagti"),
+    or the distance from the nearest well-known place when nothing is close. Never a landmark
+    kilometres away, which made IIT Jammu look as if it were at Bahu Fort."""
+    best = None
+    own = own_name.split(",")[0].lower()
+    for row in _settlements:
+        name = row["name"].split(",")[0].lower()
+        if own and (name.startswith(own) or own.startswith(name)):
+            continue
+        km = distance_km(lat, lon, row["lat"], row["lon"])
+        if best is None or km < best[0]:
+            best = (km, row["name"])
+    if best and best[0] <= 4:
+        return f"near {best[1].split(',')[0]}"
+    known = nearest_place(lat, lon)
+    km = distance_km(lat, lon, known["lat"], known["lon"])
+    return f"near {known['name']}" if km < 1.5 else f"{km:.0f} km from {known['name']}"
 
 
 def is_clear_winner(results: list) -> bool:

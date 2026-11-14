@@ -63,7 +63,7 @@ function driverHistory() {
     list.replaceChildren(
       el("div", { class: "muted" }, `${done.length} completed · ${rupees(earned)} in fares`),
       ...rides.slice(0, 10).map(r => el("div", { class: "history-item" },
-        `${r.pickup.name} → ${r.dropoff.name}`,
+        `${placeLabel(r.pickup)} → ${placeLabel(r.dropoff)}`,
         el("div", { class: "muted" }, `${rupees(r.fare)} · ${t(STATUS_TEXT[r.status])}${r.feedback ? ` · rider gave ${"★".repeat(r.feedback.rating)}` : ""}`))));
   }).catch(() => list.replaceChildren());
   return list;
@@ -99,7 +99,7 @@ function renderOffer() {
     el("div", { class: "offer-card" },
       offer.ride.rider && el("strong", {}, `Rider: ${offer.ride.rider.name}`),
       near && el("div", { class: "offer-pickup" }, `📍 ${near.km} km to pickup · ~${formatMinutes(near.minutes)}`),
-      el("div", {}, `${offer.ride.pickup.name} → ${offer.ride.dropoff.name}`),
+      el("div", {}, `${placeLabel(offer.ride.pickup)} → ${placeLabel(offer.ride.dropoff)}`),
       el("div", { class: "muted" }, `${offer.ride.km} km trip · ${rupees(offer.ride.fare)} · ${offer.ride.quote.label}`)),
     el("div", { class: "row" },
       el("button", { type: "button", class: "secondary", onclick: () => answer("decline") }, "Decline"),
@@ -131,7 +131,7 @@ function renderRide() {
     // Show this QR to the rider to collect the fare, or take cash and tap "Cash received".
     ride.status === "completed" && paymentCard(ride, { role: "driver", onCash: cashReceived }),
     ride.women_only && womenRideTag(),
-    el("div", {}, `${ride.pickup.name} → ${ride.dropoff.name}`),
+    el("div", {}, `${placeLabel(ride.pickup)} → ${placeLabel(ride.dropoff)}`),
     el("div", { class: "muted" }, `${ride.km} km · ${rupees(ride.fare)} · ${ride.quote.label}`),
     ride.rider && el("div", { class: "row", style: "align-items:center" },
       el("strong", {}, ride.rider.name),

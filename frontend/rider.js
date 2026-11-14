@@ -109,23 +109,31 @@ function marker(key, point) {
     : L.circleMarker([point.lat, point.lon], { radius: 8, color: "#fff", weight: 3, fillColor: "#111", fillOpacity: 1 }).addTo(map);
 }
 
+// The booking panel lies over the map (beside it on a wide screen, under it on a phone), so
+// framing leaves that part out; otherwise a pin can sit hidden behind the panel.
+function framePadding() {
+  const box = panel() && panel().getBoundingClientRect();
+  const view = map.getContainer().getBoundingClientRect();
+  const pad = { paddingTopLeft: [30, 30], paddingBottomRight: [30, 30] };
+  if (!box || !box.width) return pad;
+  if (box.right < view.width * 0.6) pad.paddingTopLeft[0] = Math.max(30, box.right - view.left + 30);   // beside
+  else if (box.top > view.top + view.height * 0.3) pad.paddingBottomRight[1] = Math.max(30, view.bottom - box.top + 30);   // under
+  return pad;
+}
+
+function frame(latlngs, maxZoom = 16) {
+  map.flyToBounds(L.latLngBounds(latlngs), { ...framePadding(), maxZoom, duration: .8 });
+}
+
 function drawRoute(path) {
   if (layers.route) layers.route.remove();
   layers.route = path ? L.polyline(path, routeStyle(path)).addTo(map) : null;
-  if (layers.route) map.fitBounds(layers.route.getBounds(), { padding: [30, 30] });
+  if (layers.route) frame(layers.route.getLatLngs(), 17);
 }
 
 function clearNearby() {
   layers.nearby.forEach(m => m.remove());
   layers.nearby = [];
-}
-
-async function showNearby() {
-  clearNearby();
-  if (!pickup) return;
-  const drivers = await api(`/nearby?lat=${pickup.lat}&lon=${pickup.lon}`).catch(() => []);
-  layers.nearby = drivers.map(d => L.circleMarker([d.lat, d.lon],
-    { radius: 5, color: "#fff", fillColor: d.simulated ? "#8a8a8a" : "#12805c", fillOpacity: 1, weight: 2 }).addTo(map));
 }
 
 async function withAddress(point) {
@@ -150,9 +158,9 @@ function addressSearch(id, onPick) {
         ? found.map(r => el("button", {
             type: "button", class: "address-option",
             onclick: () => {
+              fill(results);                  // the list belongs to the old search
+              input.value = "";
               onPick({ lat: r.lat, lon: r.lon, name: r.name });
-              // With both ends set, the route takes over framing the map.
-              if (!(pickup && dropoff)) map.flyTo([r.lat, r.lon], 14, { duration: .8 });
             },
           }, el("strong", {}, r.name), r.detail && el("span", { class: "muted" }, r.detail),
              r.approx && el("span", { class: "muted" }, `${t("Pin near")} ${r.area}`)))
@@ -173,8 +181,85 @@ function placeSelect(id, label, current, onPick) {
   return el("div", {}, el("label", { htmlFor: id }, t(label)), select);
 }
 
-const setPickup = p => { pickup = p; quote = null; marker("pickup", p); showNearby(); renderBooking(); };
-const setDropoff = p => { dropoff = p; quote = null; marker("dropoff", p); renderBooking(); };
+function setEnd(end, point) {
+  if (end === "pickup") pickup = point; else dropoff = point;
+  quote = null;
+  marker(end, point);
+  drawRoute(null);                      // the previous trip's route must not linger
+  const other = end === "pickup" ? dropoff : pickup;
+  // Show the new point at once (with the other end, if set); the route reframes when it arrives.
+  if (point) frame([[point.lat, point.lon], ...(other ? [[other.lat, other.lon]] : [])], other ? 16 : 15);
+  renderBooking();
+  syncTrip();
+}
+const setPickup = p => setEnd("pickup", p);
+const setDropoff = p => setEnd("dropoff", p);
+
+// The assistant keeps the same trip as the panel. If it had asked the rider to type a place,
+// it answers here ("Okay, location confirmed...") and carries on.
+let syncTimer = null;
+function syncTrip(delay = 0) {
+  clearTimeout(syncTimer);
+  syncTimer = setTimeout(() => {
+    api("/chat/trip", { method: "POST", body: { pickup, dropoff } })
+      .then(r => { if (r.reply && assistantReply) assistantReply(r.reply); })
+      .catch(() => {});
+  }, delay);
+}
+
+// "House 63, Sector E", "Gate 2": text for the driver, saved with the ride, never a map pin.
+function detailsInput(end) {
+  const point = end === "pickup" ? pickup : dropoff;
+  return el("input", {
+    id: `${end}-details`, class: "details-input", maxLength: 120, dir: "auto", disabled: !point,
+    value: (point && point.details) || "", "aria-label": t("House no., block or gate (optional)"),
+    placeholder: t("House no., block or gate (optional)"),
+    oninput: event => {
+      const current = end === "pickup" ? pickup : dropoff;
+      if (current) current.details = event.target.value;
+      syncTrip(600);
+    },
+  });
+}
+
+// Says plainly which place each end of the trip is using right now, with its coordinates, so
+// the rider can see the exact spot the driver will be sent to.
+function inUseLine(end) {
+  const point = end === "pickup" ? pickup : dropoff;
+  if (!point) return null;
+  const where = `${point.name || t("Map pin")} (${point.lat.toFixed(5)}, ${point.lon.toFixed(5)})`;
+  const lead = point.gps ? t("Using your current location:") : end === "pickup" ? t("Pickup in use:") : t("Drop-off in use:");
+  const accuracy = point.gps && point.accuracy ? ` · ${t("accurate to about")} ${Math.round(point.accuracy)} m` : "";
+  return el("div", { class: "muted in-use", role: "status", id: `${end}-in-use` },
+    el("span", { "aria-hidden": "true" }, end === "pickup" ? "📍 " : "🏁 "), el("strong", {}, lead), ` ${where}${accuracy}`);
+}
+
+// The rider's own position: high-accuracy GPS, never a cached fix, refined for a few seconds
+// as the phone gets a better reading. The marker sits on the exact coordinates.
+function useMyLocation() {
+  if (!navigator.geolocation) { toast(t("Location isn't available in this browser.")); return; }
+  toast(t("Finding your exact location…"));
+  let best = null, done = false, watch = null;
+  const finish = async () => {
+    if (done) return;
+    done = true;
+    clearTimeout(timer);
+    if (watch !== null) navigator.geolocation.clearWatch(watch);
+    if (!best) return;
+    setPickup({ ...await withAddress({ lat: best.lat, lon: best.lon }), gps: true, accuracy: best.accuracy });
+    if (best.accuracy > 100) toast(`${t("Location accurate to about")} ${Math.round(best.accuracy)} m. ${t("Tap the map to correct it.")}`);
+  };
+  const timer = setTimeout(finish, 12000);
+  watch = navigator.geolocation.watchPosition(pos => {
+    const fix = { lat: pos.coords.latitude, lon: pos.coords.longitude, accuracy: pos.coords.accuracy };
+    if (!best || fix.accuracy < best.accuracy) {
+      best = fix;
+      marker("pickup", fix);
+      frame([[fix.lat, fix.lon]], 16);
+    }
+    if (fix.accuracy <= 25) finish();
+  }, error => { toast(error.message); finish(); }, { enableHighAccuracy: true, maximumAge: 0, timeout: 20000 });
+}
 
 // Two cards can share a place, so only the first of them shows as chosen.
 const isChosen = photo => !!dropoff && PHOTOS.find(p => p.place === dropoff.name) === photo;
@@ -219,26 +304,23 @@ function renderBooking() {
     destinationScroller(),
     placeSelect("pickup-select", "Pickup", pickup, setPickup),
     addressSearch("pickup-address", setPickup),
+    detailsInput("pickup"),
+    inUseLine("pickup"),
     el("div", { class: "row" },
-      el("button", { type: "button", class: "secondary", onclick: () => {
-        if (!navigator.geolocation) return;
-        navigator.geolocation.getCurrentPosition(
-          async pos => {
-            setPickup(await withAddress({ lat: pos.coords.latitude, lon: pos.coords.longitude }));
-            map.flyTo([pos.coords.latitude, pos.coords.longitude], 15);
-          },
-          e => toast(e.message));
-      } }, t("Use my location")),
+      el("button", { type: "button", class: "secondary", onclick: useMyLocation }, t("Use my location")),
       el("button", { type: "button", class: "secondary", disabled: !(pickup && dropoff), onclick: () => {
         [pickup, dropoff] = [dropoff, pickup];
         marker("pickup", pickup);
         marker("dropoff", dropoff);
         quote = null;
-        showNearby();
+        drawRoute(null);
         renderBooking();
+        syncTrip();
       } }, "⇅  " + t("Swap"))),
     placeSelect("dropoff-select", "Drop-off", dropoff, setDropoff),
     addressSearch("dropoff-address", setDropoff),
+    detailsInput("dropoff"),
+    inUseLine("dropoff"),
     !pickup && el("div", { class: "muted" }, t("Tap the map to set a pin")),
     error, results,
     el("h3", { class: "section" }, t("Your trips")), historyList(),
@@ -321,7 +403,7 @@ function historyList() {
   api("/rides").then(rides => {
     fill(list, rides.length ? rides.slice(0, 10).map(r =>
       el("div", { class: "history-item" },
-        el("div", {}, `${r.pickup.name} → ${r.dropoff.name}`),
+        el("div", {}, `${placeLabel(r.pickup)} → ${placeLabel(r.dropoff)}`),
         el("div", { class: "muted" }, `${rupees(r.fare)} · ${t(STATUS_TEXT[r.status])} · ${new Date(r.created_at * 1000).toLocaleDateString("en-IN")}`
           + (r.feedback ? ` · ${"★".repeat(r.feedback.rating)}` : "")),
         el("button", { type: "button", class: "linkish", onclick: () => {
@@ -370,7 +452,7 @@ function showRide(next) {
     ride.status === "in_progress" && el("div", {},
       el("div", { class: "progress" }, el("div", { id: "trip-bar", class: "progress-bar" })),
       el("div", { id: "trip-eta", class: "muted" }, `~${formatMinutes(ride.minutes)} ${t("left")}`)),
-    el("div", {}, `${ride.pickup.name} → ${ride.dropoff.name}`),
+    el("div", {}, `${placeLabel(ride.pickup)} → ${placeLabel(ride.dropoff)}`),
     el("div", { class: "muted" }, `${ride.km} km · ${rupees(ride.fare)} · ${VEHICLE_ICON[ride.vehicle]} ${ride.quote.label}`),
     driver && el("div", { class: "row driver-card" },
       el("div", {}, el("strong", {}, driver.name), " ",

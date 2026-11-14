@@ -180,8 +180,10 @@ function makeVoice({ onInterim, onFinal, onState }) {
 
 const warnedNoVoice = {};
 let chatPinHandler = null;
-// Set by setupChat; rider.js calls it when a driver accepts the ride.
+// Set by setupChat; rider.js calls it when a driver accepts the ride, and when the panel's
+// trip change answers a question the assistant asked.
 let announceDriver = null;
+let assistantReply = null;
 const DRIVER_ASSIGNED = {
   en: (name, eta) => `${name} is your driver and is on the way to your pickup location${eta ? `, about ${eta} min away` : ""}.`,
   hinglish: (name, eta) => `Aapko ${name} naam ka driver assign hua hai, aur woh aapki pickup location par aa rahe hain${eta ? `, lagbhag ${eta} minute mein` : ""}.`,
@@ -304,7 +306,7 @@ function setupChat() {
         bubble(t("I couldn't get your location. Please allow location access, or tell me your area."));
         if (reply.failed_buttons) chips(reply.failed_buttons);
       },
-      { enableHighAccuracy: true, timeout: 12000, maximumAge: 60000 });
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 });
   }
 
   function pickOnMap(button) {
@@ -346,8 +348,14 @@ function setupChat() {
     if (reply.call) location.href = `tel:+91${reply.call}`;
     if (reply.temples) temples(reply.temples.map(photoById).filter(Boolean));
     if (reply.buttons && !quiet) chips(reply.buttons);
+    if (reply.type_location) {
+      input.placeholder = t("Type the place name…");
+      input.focus();
+    }
     log.scrollTop = log.scrollHeight;
   }
+
+  assistantReply = reply => { if (greeted) showReply(reply, false); };
 
   // Said aloud and shown when a driver accepts, so a rider who booked by voice hears it too.
   announceDriver = ride => {

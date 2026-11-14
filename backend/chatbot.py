@@ -413,6 +413,8 @@ REPLIES = {
         "hint_vehicle": "Pick one of the options below, or just say it.",
         "hint_confirm": "There are two options below: tap one, or say yes or no.",
         "go_there": "🚕 Go to {place}",
+        "type_location": "I couldn't find \"{place}\". Please type your {end} location below, or pick it on the map.",
+        "location_confirmed": "Okay, location confirmed.",
         "ask_spot": "Where in {place}? Pick a spot below, or tell me a landmark.",
         "whole_area": "Just {place}",
         "already_there": "You're already near {place}! Tell me if you want to go somewhere else.",
@@ -469,6 +471,8 @@ REPLIES = {
         "hint_vehicle": "Neeche diye options mein se ek chuniye, ya bol kar bataiye.",
         "hint_confirm": "Neeche aapke paas do option hain, unme se ek par tap kijiye, ya haan ya nahi bol dijiye.",
         "go_there": "🚕 {place} chalein",
+        "type_location": "\"{place}\" samajh nahi paaya. Apni {end} location neeche type kijiye, ya map par chuniye.",
+        "location_confirmed": "Theek hai, location confirm ho gayi.",
         "ask_spot": "{place} mein kahan jana hai? Neeche se jagah chuniye, ya koi landmark bataiye.",
         "whole_area": "Bas {place}",
         "already_there": "Aap to pehle se {place} ke paas hain! Kahin aur jana ho to bataiye.",
@@ -525,6 +529,8 @@ REPLIES = {
         "hint_vehicle": "नीचे दिए विकल्पों में से एक चुनिए, या बोलकर बताइए।",
         "hint_confirm": "नीचे आपके पास दो विकल्प हैं, उनमें से एक पर टैप कीजिए, या हां या नहीं बोल दीजिए।",
         "go_there": "🚕 {place} चलें",
+        "type_location": "\"{place}\" समझ नहीं पाया। अपनी {end} लोकेशन नीचे टाइप कीजिए, या मैप पर चुनिए।",
+        "location_confirmed": "ठीक है, लोकेशन कन्फ़र्म हो गई।",
         "ask_spot": "{place} में कहां जाना है? नीचे से जगह चुनिए, या कोई लैंडमार्क बताइए।",
         "whole_area": "बस {place}",
         "already_there": "आप तो पहले से {place} के पास हैं! कहीं और जाना हो तो बताइए।",
@@ -581,6 +587,8 @@ REPLIES = {
         "hint_vehicle": "نیچے دیے گئے آپشنز میں سے ایک چنیے، یا بول کر بتائیے۔",
         "hint_confirm": "نیچے آپ کے پاس دو آپشن ہیں، ان میں سے ایک پر ٹیپ کیجیے، یا ہاں یا نہیں کہہ دیجیے۔",
         "go_there": "🚕 {place} چلیں",
+        "type_location": "\"{place}\" سمجھ نہیں سکا۔ اپنی {end} لوکیشن نیچے ٹائپ کیجیے، یا نقشے پر چنیے۔",
+        "location_confirmed": "ٹھیک ہے، لوکیشن کنفرم ہو گئی۔",
         "ask_spot": "{place} میں کہاں جانا ہے؟ نیچے سے جگہ چنیے، یا کوئی نشان بتائیے۔",
         "whole_area": "بس {place}",
         "already_there": "آپ تو پہلے سے {place} کے پاس ہیں! کہیں اور جانا ہو تو بتائیے۔",
@@ -630,6 +638,10 @@ FAITH_NAMES = {
     "hinglish": {"temple": "mandir", "mosque": "masjidein", "gurudwara": "gurudware"},
     "hi": {"temple": "मंदिर", "mosque": "मस्जिदें", "gurudwara": "गुरुद्वारे"},
     "ur": {"temple": "مندر", "mosque": "مساجد", "gurudwara": "گردوارے"},
+}
+END_NAMES = {
+    "en": {"pickup": "pickup", "dropoff": "drop-off"}, "hinglish": {"pickup": "pickup", "dropoff": "drop"},
+    "hi": {"pickup": "पिकअप", "dropoff": "ड्रॉप"}, "ur": {"pickup": "پک اپ", "dropoff": "ڈراپ"},
 }
 AND = {"en": "and", "hinglish": "aur", "hi": "और", "ur": "اور"}
 

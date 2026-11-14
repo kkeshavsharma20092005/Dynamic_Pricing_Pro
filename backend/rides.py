@@ -311,6 +311,7 @@ class Point(BaseModel):
     lat: float = Field(..., ge=-90, le=90)
     lon: float = Field(..., ge=-180, le=180)
     name: str | None = Field(None, max_length=120)
+    details: str | None = Field(None, max_length=120)     # "House 63, Sector E": shown to the driver, never pinned
 
 
 class QuoteBody(BaseModel):
@@ -353,8 +354,10 @@ def build_quote(body: QuoteBody) -> dict:
 
 
 def label_point(point: Point) -> dict:
-    return {"lat": point.lat, "lon": point.lon,
-            "name": point.name or f"Near {nearest_place(point.lat, point.lon)['name']}"}
+    labelled = {"lat": point.lat, "lon": point.lon,
+                "name": point.name or f"Near {nearest_place(point.lat, point.lon)['name']}"}
+    details = (point.details or "").strip()
+    return {**labelled, "details": details} if details else labelled
 
 
 @router.get("/places")
@@ -933,10 +936,12 @@ async def address_search(q: str = Query(..., min_length=2, max_length=120), near
     local = localities.lookup(q)
     if local and not local["approx"]:
         results.append(local)
-    results += placesdb.search(q, near)
+    found = placesdb.search(q, near)
+    results += found
     if local and local["approx"]:
         results.append(local)
-    if not results:
+    # The place data has gaps; without an exact name match, OpenStreetMap's own search may know it.
+    if not known and not (local and not local["approx"]) and not any(r.get("exact") for r in found):
         results += await geocode.search(q, near)
     unique = {(r["name"], round(r["lat"], 2), round(r["lon"], 2)): r for r in reversed(results)}
     return list(reversed(unique.values()))[:6]
@@ -972,7 +977,7 @@ def chat_point(name: str) -> dict:
 def chat_route(chat: dict) -> dict:
     """Price the trip in the conversation. Errors become a sentence in the rider's language."""
     def point(p):
-        return Point(lat=p["lat"], lon=p["lon"], name=p["name"][:120])
+        return Point(lat=p["lat"], lon=p["lon"], name=p["name"][:120], details=p.get("details"))
     return build_quote(QuoteBody(pickup=point(chat["pickup"]), dropoff=point(chat["dropoff"])))
 
 
@@ -1085,6 +1090,28 @@ def new_chat() -> dict:
             "asking": None, "turn": 0}
 
 
+class TripBody(BaseModel):
+    pickup: Point | None = None
+    dropoff: Point | None = None
+
+
+@router.post("/chat/trip")
+async def chat_trip(body: TripBody, user: dict = Depends(current_user)):
+    """The rider set the trip in the panel or on the map. The assistant now holds exactly those
+    points, so a spoken "yes, book it" can never book an older trip. If the assistant had asked
+    the rider to type a place, it confirms and carries on."""
+    chat = hub.chats.setdefault(user["id"], new_chat())
+    for end in ("pickup", "dropoff"):
+        point = getattr(body, end)
+        chat[end] = label_point(point) if point else None
+    chat.update(vehicle=None, awaiting=None, asking=None, advised=None,
+                spot_asked=chat["dropoff"]["name"] if chat["dropoff"] else None)
+    if not chat.pop("typed_wanted", None) or not (chat["pickup"] or chat["dropoff"]):
+        return {"synced": True}
+    chat["location_confirmed"] = True
+    return {"synced": True, "reply": {**await next_step(chat, user, chat["lang"], chatbot.Parsed(), None), "lang": chat["lang"]}}
+
+
 @router.get("/chat/hello")
 def chat_hello(lang: str = "en", user: dict = Depends(current_user)):
     """A personal opening: the rider's name, the time of day, and where they last went."""
@@ -1122,21 +1149,27 @@ async def apply_place(chat: dict, target: str, text: str, user: dict, lang: str)
             point = placesdb.find_in_area(text, other["lat"], other["lon"])
     point = point or await resolve_place(text, user, other)
     if point is None:
-        chat["asking"] = target
-        return {"text": chatbot.say(lang, "not_found", place=text), "buttons": place_buttons(lang, target, user), "listen": True}
+        chat.update(asking=target, typed_wanted=target)
+        end = chatbot.END_NAMES[lang][target]
+        return {"text": chatbot.say(lang, "type_location", place=text, end=end), "buttons": place_buttons(lang, target, user),
+                "type_location": target}
     if "choices" in point:
         chat["asking"] = target
         return {"text": chatbot.say(lang, "which_one"), "listen": False,
                 "buttons": [{"label": f"{c['name']} · {c['town']}", "action": "point", "target": target,
                              "point": {"lat": c["lat"], "lon": c["lon"], "name": c["name"]}} for c in point["choices"]]}
     chat[target] = point
+    if chat.pop("typed_wanted", None):
+        chat["location_confirmed"] = True
     return None
 
 
 async def chat_reply(body: ChatBody, user: dict) -> dict:
     parsed = chatbot.parse(body.message)
     chat = hub.chats.setdefault(user["id"], new_chat())
-    chat["lang"] = parsed.lang or chat["lang"]
+    # Answering "where?" with a place name ("iit jammu") is not switching to English.
+    if parsed.lang and not (parsed.lang == "en" and chat["asking"]):
+        chat["lang"] = parsed.lang
     chat["turn"] += 1
     lang = chat["lang"]
 
@@ -1202,6 +1235,8 @@ async def chat_reply(body: ChatBody, user: dict) -> dict:
         name = body.location.name or await describe_point(body.location.lat, body.location.lon)
         chat[body.target] = {"lat": body.location.lat, "lon": body.location.lon, "name": name[:120]}
         chat["asking"] = None
+        if chat.pop("typed_wanted", None):
+            chat["location_confirmed"] = True
         said_here = body.target == "pickup" and not body.location.name
         return await next_step(chat, user, lang, parsed, chatbot.say(lang, "located", pickup=name) if said_here else None)
 
@@ -1396,6 +1431,10 @@ async def road_note(chat: dict, lang: str) -> str | None:
 
 async def next_step(chat: dict, user: dict, lang: str, parsed: chatbot.Parsed, opener: str | None) -> dict:
     """Ask for what's missing, or give the fare. Only one question at a time, like a person."""
+    if chat.pop("location_confirmed", False):
+        confirmed = chatbot.say(lang, "location_confirmed")
+        opener = f"{confirmed} {opener}" if opener else confirmed
+
     def lead(text: str) -> str:
         return f"{opener} {text}" if opener else chatbot.with_ack(lang, text, chat["turn"])
 

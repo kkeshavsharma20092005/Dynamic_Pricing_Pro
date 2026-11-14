@@ -620,3 +620,6 @@ body.theme-fade, body.theme-fade * {
 .women-welcome-title { margin-top: 8px; font: italic 500 34px/1.15 "Playfair Display", Georgia, serif; color: #8a1846;
                        animation-delay: .5s; }
 .women-welcome-line { margin: 10px 0 0; font-size: 14px; line-height: 1.5; color: #7a5566; animation-delay: .7s; }
+/* The optional house number / gate line under each address search. */
+.details-input { margin-top: -4px; }
+.in-use { font-size: 13px; line-height: 1.4; }

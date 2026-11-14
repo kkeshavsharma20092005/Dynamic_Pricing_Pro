@@ -95,6 +95,21 @@ MAIL_FROM="Raahi <yourname@gmail.com>"   # optional
 Without `BREVO_API_KEY` or `SMTP_HOST` nothing is sent: the server prints each email, code included, to its log, so you
 can try the flow locally.
 
+### Choosing pickup and drop-off
+
+- **Use my location** takes a fresh high-accuracy GPS reading (never a cached one) and refines it for a
+  few seconds; the pickup pin sits on those exact coordinates, and the panel says which place each end is
+  using, with its coordinates and the GPS accuracy.
+- **Search** puts exact name matches first, knows short names such as IIT Jammu, MIET, SMVDU and JU, and
+  asks OpenStreetMap only when the app's place data has no exact match. Each result is labelled with the
+  nearest village or area ("University · near Jagti"), not a landmark kilometres away.
+- The map shows only the pickup and drop-off pins before a ride. Choosing a new place replaces its pin,
+  removes the old route at once and reframes the map clear of the booking panel.
+- An optional **house no., block or gate** line under each end is saved with the ride and shown to the
+  driver, without adding a pin.
+- The booking panel and the assistant share one trip, so a spoken "yes, book it" always books what the
+  panel shows. If the assistant can't find a spoken place, it asks the rider to type it, then confirms.
+
 ### Emails the app sends
 
 | When | Who | Email |
