@@ -26,7 +26,7 @@ ALIASES = {
     "Jammu Airport": ["jammu airport", "जम्मू एयरपोर्ट", "जम्मू हवाई अड्डा", "جموں ایئرپورٹ"],
     "Raghunath Bazaar": ["raghunath bazar", "रघुनाथ बाज़ार", "رگھوناتھ بازار"],
     "Raghunath Temple": ["raghunath mandir", "raghunath temple", "रघुनाथ मंदिर", "رگھوناتھ مندر"],
-    "Gandhi Nagar, Jammu": ["gandhi nagar", "गांधी नगर", "گاندھی نگر"],
+    "Gandhi Nagar, Jammu": ["gandhi nagar", "gandhinagar", "गांधी नगर", "गांधीनगर", "गाँधी नगर", "گاندھی نگر"],
     "Katra": ["katra", "katara", "कटरा", "کٹرہ", "کٹڑا", "vaishno devi", "mata vaishno devi", "वैष्णो देवी", "माता वैष्णो देवी", "ویشنو دیوی"],
     "Bahu Fort": ["bahu fort", "bahu kila", "बाहु किला", "बाहु फोर्ट", "باہو قلعہ"],
     "Samba": ["samba", "सांबा", "سانبہ"], "Kathua": ["kathua", "कठुआ", "کٹھوعہ"],
@@ -127,7 +127,7 @@ FILLER_WORDS = """optimal cheapest cheap best sasta sasti saste sabse budget pri
     ke ka ki liye par pe wala wali aur bhai ji ek
     do de dijiye dijie dena dedo kijiye kijie plz abhi jaldi zara ab kaise kese how far door dur distance kitni
     मुझे मुझको मैं में मेरा मेरी मेरे अपने अपना है हैं हो चाहिए करो करना कर दो के का की लिए पर वाला और भाई एक बुक राइड
-    दीजिए दीजिये कीजिए अभी जल्दी कैसे कितनी दूर दूरी
+    दीजिए दीजिये कीजिए अभी जल्दी कैसे कितनी दूर दूरी मेरेको मुझको
     मिगी मिकी migi miki ऐ ae ए दा da दी di किन्ना kinna चाहिदी चाहिदा chahidi chahida
     مجھے میں میرا میری میرے اپنے اپنا ہے ہیں ہو چاہیے کرو کرنا کر دو کے کا کی لیے پر والا اور بھائی ایک بک سواری""".split()
 
@@ -402,7 +402,7 @@ REPLIES = {
     "en": {
         "help": "I'm your local guide. Tell me where you want to go, like \"Jammu to Katra by cab\", or ask me about a place, like \"what to see in Katra\", or today's weather.",
         "greet": "Hello! I'm Raahi, your local guide. Where would you like to go?",
-        "ask_pickup": "Going to {dropoff}. Where should I pick you up?",
+        "ask_pickup": "Going to {dropoff}. Where should I pick you up? Say your exact spot, like a lane or landmark, tap My current location, or pick it on the map.",
         "ask_dropoff": "Pickup from {pickup}. Where are you going?",
         "ask_vehicle": "{pickup} to {dropoff}, {km} km. Which one would you like?",
         "not_offered": "{vehicle} is not available for this trip. Please pick one of these.",
@@ -413,6 +413,9 @@ REPLIES = {
         "hint_vehicle": "Pick one of the options below, or just say it.",
         "hint_confirm": "There are two options below: tap one, or say yes or no.",
         "go_there": "🚕 Go to {place}",
+        "ask_spot": "Where in {place}? Pick a spot below, or tell me a landmark.",
+        "whole_area": "Just {place}",
+        "already_there": "You're already near {place}! Tell me if you want to go somewhere else.",
         "nearby_found": "These {kind} are closest to you: {places}. Tap one and I'll take you there.",
         "nearby_town": "These {kind} are close to {place}: {places}. Tap one and I'll take you there.",
         "nearby_none": "I couldn't find any {kind} within 15 km of you.",
@@ -455,7 +458,7 @@ REPLIES = {
     "hinglish": {
         "help": "Main aapka local guide hoon. Bataiye kahan jana hai, jaise \"Jammu se Katra cab\", ya kisi jagah ke baare mein puchiye, jaise \"Katra mein kya dekhna hai\", ya aaj ka mausam.",
         "greet": "Namaste ji! Main Raahi, aapka local guide. Kahan chalna hai?",
-        "ask_pickup": "{dropoff} jana hai. Aapko kahan se pick karun?",
+        "ask_pickup": "{dropoff} jana hai. Aapko kahan se pick karun? Apni exact jagah boliye, jaise gali ya landmark, ya Meri current location dabaiye, ya map par jagah chuniye.",
         "ask_dropoff": "{pickup} se pickup. Kahan jana hai?",
         "ask_vehicle": "{pickup} se {dropoff}, {km} km. Kaunsi gaadi chahiye?",
         "not_offered": "Is trip ke liye {vehicle} available nahi hai. Inme se chuniye.",
@@ -466,6 +469,9 @@ REPLIES = {
         "hint_vehicle": "Neeche diye options mein se ek chuniye, ya bol kar bataiye.",
         "hint_confirm": "Neeche aapke paas do option hain, unme se ek par tap kijiye, ya haan ya nahi bol dijiye.",
         "go_there": "🚕 {place} chalein",
+        "ask_spot": "{place} mein kahan jana hai? Neeche se jagah chuniye, ya koi landmark bataiye.",
+        "whole_area": "Bas {place}",
+        "already_there": "Aap to pehle se {place} ke paas hain! Kahin aur jana ho to bataiye.",
         "nearby_found": "Aapke paas yeh {kind} hain: {places}. Jis par tap karenge, wahan le chalunga.",
         "nearby_town": "{place} ke paas yeh {kind} hain: {places}. Jis par tap karenge, wahan le chalunga.",
         "nearby_none": "Aapke 15 km ke andar koi {kind} nahi mila.",
@@ -508,7 +514,7 @@ REPLIES = {
     "hi": {
         "help": "मैं आपका लोकल गाइड हूं। बताइए कहां जाना है, जैसे \"जम्मू से कटरा कैब\", या किसी जगह के बारे में पूछिए, जैसे \"कटरा में क्या देखना है\", या आज का मौसम।",
         "greet": "नमस्ते जी! मैं राही, आपका लोकल गाइड। कहां चलना है?",
-        "ask_pickup": "{dropoff} जाना है। आपको कहां से लूं?",
+        "ask_pickup": "{dropoff} जाना है। आपको कहां से लूं? अपनी सटीक जगह बोलिए, जैसे गली या लैंडमार्क, या मेरी मौजूदा लोकेशन दबाइए, या मैप पर जगह चुनिए।",
         "ask_dropoff": "{pickup} से पिकअप। कहां जाना है?",
         "ask_vehicle": "{pickup} से {dropoff}, {km} किमी। कौन सी गाड़ी चाहिए?",
         "not_offered": "इस यात्रा के लिए {vehicle} उपलब्ध नहीं है। इनमें से चुनिए।",
@@ -519,6 +525,9 @@ REPLIES = {
         "hint_vehicle": "नीचे दिए विकल्पों में से एक चुनिए, या बोलकर बताइए।",
         "hint_confirm": "नीचे आपके पास दो विकल्प हैं, उनमें से एक पर टैप कीजिए, या हां या नहीं बोल दीजिए।",
         "go_there": "🚕 {place} चलें",
+        "ask_spot": "{place} में कहां जाना है? नीचे से जगह चुनिए, या कोई लैंडमार्क बताइए।",
+        "whole_area": "बस {place}",
+        "already_there": "आप तो पहले से {place} के पास हैं! कहीं और जाना हो तो बताइए।",
         "nearby_found": "आपके पास ये {kind} हैं: {places}। जिस पर टैप करेंगे, वहां ले चलूंगा।",
         "nearby_town": "{place} के पास ये {kind} हैं: {places}। जिस पर टैप करेंगे, वहां ले चलूंगा।",
         "nearby_none": "आपके 15 किमी के अंदर कोई {kind} नहीं मिला।",
@@ -561,7 +570,7 @@ REPLIES = {
     "ur": {
         "help": "بتائیے کہاں جانا ہے، جیسے \"جموں سے کٹرہ ٹیکسی\"۔ میں جموں کے مندر بھی دکھا سکتا ہوں اور بتا سکتا ہوں کہ آپ کی سواری کہاں ہے۔",
         "greet": "السلام علیکم! آپ کو کہاں جانا ہے؟",
-        "ask_pickup": "{dropoff} جانا ہے۔ آپ کو کہاں سے لوں؟",
+        "ask_pickup": "{dropoff} جانا ہے۔ آپ کو کہاں سے لوں؟ اپنی صحیح جگہ بتائیے، جیسے گلی یا نشان، یا میری موجودہ لوکیشن دبائیے، یا نقشے پر جگہ چنیے۔",
         "ask_dropoff": "{pickup} سے پک اپ۔ کہاں جانا ہے؟",
         "ask_vehicle": "{pickup} سے {dropoff}، {km} کلومیٹر۔ کون سی گاڑی چاہیے؟",
         "not_offered": "اس سفر کے لیے {vehicle} دستیاب نہیں۔ ان میں سے چنیے۔",
@@ -572,6 +581,9 @@ REPLIES = {
         "hint_vehicle": "نیچے دیے گئے آپشنز میں سے ایک چنیے، یا بول کر بتائیے۔",
         "hint_confirm": "نیچے آپ کے پاس دو آپشن ہیں، ان میں سے ایک پر ٹیپ کیجیے، یا ہاں یا نہیں کہہ دیجیے۔",
         "go_there": "🚕 {place} چلیں",
+        "ask_spot": "{place} میں کہاں جانا ہے؟ نیچے سے جگہ چنیے، یا کوئی نشان بتائیے۔",
+        "whole_area": "بس {place}",
+        "already_there": "آپ تو پہلے سے {place} کے پاس ہیں! کہیں اور جانا ہو تو بتائیے۔",
         "nearby_found": "آپ کے قریب یہ {kind} ہیں: {places}۔ جس پر ٹیپ کریں گے، وہاں لے چلوں گا۔",
         "nearby_town": "{place} کے قریب یہ {kind} ہیں: {places}۔ جس پر ٹیپ کریں گے، وہاں لے چلوں گا۔",
         "nearby_none": "آپ کے 15 کلومیٹر کے اندر کوئی {kind} نہیں ملا۔",

@@ -242,7 +242,16 @@ the booking question, which needs a tap on the mic so that background noise can'
 - answers questions such as `katra mein kya dekhna hai`, `vaishno devi ki yatra kab hoti hai` or `jammu mein ghoomne ki jagah` from short hand-written notes on 17 places (`backend/jkinfo.py`), with a button to go there;
 - gives today's weather from [Open-Meteo](https://open-meteo.com) (free, no key or account; `LIVE_WEATHER=0` turns it off and the admin's conditions are used instead), and says when a road is closed;
 - lists the nearest temples, mosques or gurudwaras to the rider's location (`mere paas ke mandir`, `temples near me`, Dogri `इत्थूं कोल मंदिर`) or to a town (`katra ke paas mandir`), from the OpenStreetMap places in the app; a tap goes straight to fares;
-- uses the rider's location by itself when the browser already allows it, tells the rider to pick one of the options below, says to watch the main screen after booking, adds a local tip for places like Katra (`Jai Mata Di! …`), and announces the driver when one accepts (`Aapko Ajay Gupta naam ka driver assign hua hai…`).
+- asks where in an area, like a driver would: "Gandhi Nagar mein kahan jana hai?" with its best-known spots
+  to tap (hospitals, markets, temples, from the map data; hand-picked for Jammu and Srinagar), or a landmark
+  said aloud, which is then looked up inside that area; at pickup it asks for the exact spot, the rider's
+  location, or a pin on the map, and says so when the rider is already at the place;
+- before a trip over the hills, says how the road looks: live weather at Ramban, Banihal and Qazigund on the
+  Jammu-Srinagar highway (NH-44), or at the hill destination, with a landslide and jam warning in rain, snow,
+  storms or fog, and a reminder to check the J&K Traffic Police advisory. No free feed of official traffic
+  advisories exists, so admins can paste today's line from it under **Highway update for riders** in the
+  admin panel; the assistant reads it to riders for 24 hours. A road an admin marks closed still blocks booking;
+- uses the rider's location by itself when the browser already allows it, saying it is finding them, tells the rider to pick one of the options below, says to watch the main screen after booking, adds a local tip for places like Katra (`Jai Mata Di! …`), and announces the driver when one accepts (`Aapko Ajay Gupta naam ka driver assign hua hai…`).
 
 It runs on written rules in `backend/chatbot.py`, not an AI model. That means no API key, no cost per
 message, and no messages sent to an outside service, and every behaviour can be tested exactly. The

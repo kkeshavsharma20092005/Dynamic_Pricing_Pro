@@ -299,10 +299,12 @@ function setupChat() {
     navigator.geolocation.getCurrentPosition(
       pos => send("", null, { location: { lat: pos.coords.latitude, lon: pos.coords.longitude }, target: reply.need_location }, fromVoice),
       () => {
+        // Asked by the app itself: fall back to the question it answered for the rider.
+        if (reply.fallback) { showReply(reply.fallback, fromVoice); return; }
         bubble(t("I couldn't get your location. Please allow location access, or tell me your area."));
         if (reply.failed_buttons) chips(reply.failed_buttons);
       },
-      { enableHighAccuracy: true, timeout: 12000 });
+      { enableHighAccuracy: true, timeout: 12000, maximumAge: 60000 });
   }
 
   function pickOnMap(button) {
@@ -369,7 +371,9 @@ function setupChat() {
         ...(typeof isWomenMode === "function" && isWomenMode() ? { women_only: true } : {}) } });
       waiting.remove();
       const autoLocate = reply.ask_location && await locationAllowed();
-      showReply(reply, fromVoice, autoLocate);
+      // Finding the rider takes a few seconds on a phone, so say so instead of going quiet.
+      showReply(autoLocate ? { ...reply, text: reply.locating_text || reply.text, buttons: null, listen: false } : reply,
+                fromVoice);
       if (reply.need_location) askForLocation(reply, fromVoice);
       if (reply.cleared) resetBooking();
       if (!reply.ride && (reply.pickup || reply.dropoff)) {
@@ -385,7 +389,7 @@ function setupChat() {
         }
         renderBooking();
       }
-      if (autoLocate) askForLocation({ need_location: "pickup", failed_buttons: reply.buttons }, fromVoice);
+      if (autoLocate) askForLocation({ need_location: "pickup", failed_buttons: reply.buttons, fallback: reply }, fromVoice);
       if (reply.ride) showRide(reply.ride);
       else if (reply.refresh) api("/rides/active").then(r => r ? showRide(r) : resetBooking()).catch(() => {});
     } catch (e) {

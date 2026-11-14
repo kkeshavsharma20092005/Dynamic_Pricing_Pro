@@ -109,6 +109,28 @@ class KnowledgeTests(unittest.TestCase):
             text = jkinfo.weather_text("hinglish", places, conditions, label)
         self.assertTrue(text.startswith("App mein di gayi jaankari (live mausam nahi): Jammu City: 30°C, saaf aasmaan"), text)
 
+    def test_road_advisory_warns_in_bad_weather(self):
+        jkinfo._weather_cache.clear()
+        answer = httpx.Response(200, json=[{"current": {"temperature_2m": 9, "weather_code": 0}},
+                                           {"current": {"temperature_2m": 1, "weather_code": 73}},
+                                           {"current": {"temperature_2m": 4, "weather_code": 3}}],
+                                request=httpx.Request("GET", jkinfo.WEATHER_URL))
+        with mock.patch.dict("os.environ", {"LIVE_WEATHER": "1"}), mock.patch.object(jkinfo.httpx, "get", return_value=answer):
+            text = jkinfo.road_advisory("hinglish", "nh44", jkinfo.HIGHWAY_POINTS, lambda n: n)
+        self.assertEqual(text, "Raaste ka alert: Jammu-Srinagar highway (NH-44) par abhi mausam kharab hai (Ramban 9°C saaf aasmaan, "
+                               "Banihal 1°C barfbaari, Qazigund 4°C halke baadal). Is mausam mein landslide, patthar girne aur jaam "
+                               "ka khatra rehta hai. Nikalne se pehle J&K Traffic Police ki advisory zaroor dekh lijiye.")
+        jkinfo._weather_cache.clear()
+
+    def test_area_spots_are_real_places_not_statues(self):
+        from places import BY_NAME as places
+        area = places["Gandhi Nagar, Jammu"]
+        names = [s["name"] for s in placesdb.spots_in(area["lat"], area["lon"], 1.2)]
+        self.assertIn("District Hospital Gandhi Nagar", names)
+        self.assertLessEqual(len(names), 6)
+        jammu = places["Jammu City"]
+        self.assertNotIn("Mahatma Gandhi", [s["name"] for s in placesdb.spots_in(jammu["lat"], jammu["lon"], 2.0)])
+
     def test_nearby_worship_sorts_by_distance_and_skips_unnamed_places(self):
         temples = placesdb.nearby_worship(JAMMU["lat"], JAMMU["lon"], "temple")
         self.assertTrue(temples)
@@ -189,6 +211,57 @@ class GuideConversationTests(unittest.TestCase):
         self.assertIn("Kaunsi gaadi chahiye", fares["text"])
         self.assertEqual(self.client.post("/api/chat", headers=self.headers, json={
             "message": "", "location": JAMMU, "target": "nearby:casino"}).status_code, 422)
+
+    def tap(self, button):
+        return self.say("", location=button["point"], target=button["target"])
+
+    def test_an_area_drop_off_asks_where_in_it(self):
+        reply = self.say("mereko gandhi nagar jana hai")
+        self.assertTrue(reply["text"].endswith("Gandhi Nagar, Jammu mein kahan jana hai? Neeche se jagah chuniye, ya koi landmark bataiye."),
+                        reply["text"])
+        labels = [b["label"] for b in reply["buttons"]]
+        self.assertIn("District Hospital Gandhi Nagar", labels)
+        self.assertEqual(labels[-1], "Bas Gandhi Nagar, Jammu")
+        pickup_question = self.tap(reply["buttons"][0])
+        self.assertTrue(pickup_question["ask_location"])
+        self.assertIn("exact jagah", pickup_question["text"])
+        self.assertTrue(pickup_question["locating_text"].endswith("abhi dekhta hoon aap kahan hain."))
+
+    def test_a_landmark_answer_is_found_inside_the_area(self):
+        self.say("mujhe gandhi nagar jana hai")
+        reply = self.say("district hospital")
+        self.assertEqual(reply["dropoff"]["name"], "District Hospital Gandhi Nagar")
+
+    def test_already_there(self):
+        whole = self.say("gandhinagar jana hai")["buttons"][-1]
+        self.tap(whole)
+        inside = self.say("", location={"lat": 32.7101, "lon": 74.8601}, target="pickup")
+        self.assertIn("Aap to pehle se Gandhi Nagar, Jammu ke paas hain", inside["text"])
+
+    def test_city_drop_offs_offer_their_best_known_places(self):
+        reply = self.say("katra se jammu jana hai")
+        self.assertIn("Jammu Railway Station", [b["label"] for b in reply["buttons"]])
+
+    def test_hill_trips_get_road_advice_once(self):
+        vehicles = self.say("jammu se gulmarg jana hai")
+        self.assertIn("Jammu-Srinagar highway (NH-44)", vehicles["text"])
+        self.assertIn("J&K Traffic Police ki advisory", vehicles["text"])
+        self.assertNotIn("NH-44", self.say("cab")["text"])            # said once per trip
+        self.assertNotIn("highway", self.say("jammu se bahu fort cab")["text"])   # a city trip
+
+    def test_admins_post_todays_highway_update(self):
+        admin = self.client.post("/api/login", json={"phone": "9000000001", "password": "admin-test-password", "role": "admin"})
+        admin = {"Authorization": "Bearer " + admin.json()["token"]}
+        self.assertEqual(self.client.put("/api/admin/highway", headers=self.headers, json={"note": "x"}).status_code, 403)
+        saved = self.client.put("/api/admin/highway", headers=admin, json={"note": " Highway one-way from Jammu today "})
+        self.assertEqual(saved.json(), {"note": "Highway one-way from Jammu today"})
+        try:
+            self.assertEqual(self.client.get("/api/admin/conditions", headers=admin).json()["highway_note"],
+                             "Highway one-way from Jammu today")
+            reply = self.say("jammu se gulmarg cab")
+            self.assertIn("Raahi ki aaj ki jaankari: Highway one-way from Jammu today. ", reply["text"])
+        finally:
+            self.assertEqual(self.client.put("/api/admin/highway", headers=admin, json={"note": ""}).json(), {"note": None})
 
     def test_temples_near_a_named_town_need_no_location(self):
         reply = self.say("katra ke paas mandir")

@@ -152,6 +152,57 @@ WEATHER_TEXT = {
 CONDITION_SKY = {"Clear": "clear", "Cloudy": "cloudy", "Foggy": "fog", "Rainy": "rain", "Stormy": "storm", "Snowy": "snow"}
 
 
+# ---------------------------------------------------------------- road advisories
+# The Jammu-Srinagar highway (NH-44) is where landslides and jams hit riders most; these towns
+# sit on its worst stretch. Live weather there is the warning sign. No free feed of official
+# traffic advisories exists, so admins can also post today's update (see rides.py).
+HIGHWAY_POINTS = ["Ramban", "Banihal", "Qazigund"]
+BAD_SKIES = {"rain", "snow", "storm", "fog"}
+ROAD_NAMES = {
+    "en": {"nh44": "the Jammu-Srinagar highway (NH-44)", "hill": "the hill road"},
+    "hinglish": {"nh44": "Jammu-Srinagar highway (NH-44)", "hill": "pahadi raaste"},
+    "hi": {"nh44": "जम्मू-श्रीनगर हाईवे (NH-44)", "hill": "पहाड़ी रास्ते"},
+}
+ROAD_TEXT = {
+    "en": {"bad": "Road alert: bad weather on {road} right now ({lines}). Landslides, falling rocks and jams are likely in this weather.",
+           "ok": "Weather on {road} looks fine right now ({lines}).",
+           "unknown": "I couldn't get live weather for {road}.",
+           "check": "Check the J&K Traffic Police advisory before you leave.",
+           "admin": "Today's update from Raahi: {note}"},
+    "hinglish": {"bad": "Raaste ka alert: {road} par abhi mausam kharab hai ({lines}). Is mausam mein landslide, patthar girne aur jaam ka khatra rehta hai.",
+                 "ok": "{road} par abhi mausam theek hai ({lines}).",
+                 "unknown": "{road} ka live mausam abhi nahi mil paya.",
+                 "check": "Nikalne se pehle J&K Traffic Police ki advisory zaroor dekh lijiye.",
+                 "admin": "Raahi ki aaj ki jaankari: {note}"},
+    "hi": {"bad": "रास्ते का अलर्ट: {road} पर अभी मौसम ख़राब है ({lines})। इस मौसम में भूस्खलन, पत्थर गिरने और जाम का ख़तरा रहता है।",
+           "ok": "{road} पर अभी मौसम ठीक है ({lines})।",
+           "unknown": "{road} का लाइव मौसम अभी नहीं मिल पाया।",
+           "check": "निकलने से पहले जम्मू-कश्मीर ट्रैफ़िक पुलिस की एडवाइज़री ज़रूर देख लीजिए।",
+           "admin": "राही की आज की जानकारी: {note}"},
+}
+
+
+def road_advisory(lang: str, road: str, names: list[str], label, admin_note: str | None = None) -> str:
+    """What a local would tell you before a hill or highway trip: today's update, live weather, and to check the police advisory."""
+    lang = text_lang(lang)
+    words, sky = ROAD_TEXT[lang], SKY[lang]
+    road_name = ROAD_NAMES[lang][road]
+    parts = []
+    if admin_note:
+        note = admin_note.strip()
+        parts.append(words["admin"].format(note=note if note[-1] in ".!?।" else note + "."))
+    live = live_weather(names)
+    if live is None:
+        parts.append(words["unknown"].format(road=road_name))
+    else:
+        lines = ", ".join(f"{label(n)} {w['temp']}°C {sky[w['sky']]}" for n, w in zip(names, live))
+        bad = any(w["sky"] in BAD_SKIES for w in live)
+        parts.append(words["bad" if bad else "ok"].format(road=road_name, lines=lines))
+    parts.append(words["check"])
+    text = " ".join(parts)
+    return text[0].upper() + text[1:]
+
+
 def text_lang(lang: str) -> str:
     """These notes exist in English, Roman Hindi and Hindi; Urdu readers get the English."""
     return lang if lang in LANG_INDEX else "en"

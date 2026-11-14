@@ -1115,7 +1115,12 @@ async def apply_place(chat: dict, target: str, text: str, user: dict, lang: str)
         chat["asking"] = None
         return {"text": chatbot.say(lang, "ask_home")}
     other = chat["dropoff" if target == "pickup" else "pickup"]
-    point = await resolve_place(text, user, other)
+    point = None
+    if target == "dropoff" and chat.get("near_hint"):
+        other = chat.pop("near_hint")
+        if text not in (chatbot.CURRENT, chatbot.HOME) and text not in BY_NAME:
+            point = placesdb.find_in_area(text, other["lat"], other["lon"])
+    point = point or await resolve_place(text, user, other)
     if point is None:
         chat["asking"] = target
         return {"text": chatbot.say(lang, "not_found", place=text), "buttons": place_buttons(lang, target, user), "listen": True}
@@ -1322,17 +1327,88 @@ def trip_points(chat: dict) -> dict:
     return {k: chat[k] for k in ("pickup", "dropoff") if chat[k]}
 
 
+# Drop-offs that are whole areas: the assistant asks where in them, like a driver would.
+TOWN_AREAS = ("Samba", "Kathua", "Akhnoor", "Udhampur", "Reasi", "Rajouri", "Poonch", "Ramban", "Banihal", "Doda",
+              "Bhaderwah", "Kishtwar", "Budgam", "Ganderbal", "Baramulla", "Sopore", "Bandipora", "Kupwara",
+              "Pulwama", "Awantipora", "Shopian", "Kulgam", "Anantnag", "Qazigund")
+AREA_RADIUS_KM = {"Gandhi Nagar, Jammu": 1.2, **{name: 2.5 for name in TOWN_AREAS}}
+# For the two cities, the places riders actually ask for, rather than whatever the map holds.
+CITY_SPOTS = {"Jammu City": ["Jammu Railway Station", "Raghunath Bazaar", "Raghunath Temple", "Gandhi Nagar, Jammu",
+                             "Bahu Fort", "Jammu Airport"],
+              "Srinagar, Lal Chowk": ["Dal Gate", "Hazratbal", "Nishat Bagh", "Srinagar Airport"]}
+HIGHWAY_TOWNS = {"Patnitop", "Ramban", "Banihal"}
+HIGHWAY_NOTE_HOURS = 24
+
+
+def area_spots(area: dict) -> list:
+    name = area["name"]
+    if name in CITY_SPOTS:
+        return [chat_point(n) for n in CITY_SPOTS[name]]
+    if name not in AREA_RADIUS_KM:
+        return []
+    town = name.split(",")[0].lower()
+    return [s for s in placesdb.spots_in(area["lat"], area["lon"], AREA_RADIUS_KM[name]) if s["name"].lower() != town]
+
+
+def spot_question(chat: dict, lang: str) -> dict | None:
+    """"Gandhi Nagar mein kahan jana hai?", once per area, with its best-known spots to tap."""
+    area = chat["dropoff"]
+    if not area or chat.get("spot_asked") == area["name"]:
+        return None
+    spots = area_spots(area)
+    if len(spots) < 2:
+        return None
+    chat.update(spot_asked=area["name"], asking="dropoff", near_hint=area)
+
+    def button(point, label):
+        return {"label": label, "action": "point", "target": "dropoff",
+                "point": {"lat": point["lat"], "lon": point["lon"], "name": point["name"]}}
+    return {"text": chatbot.say(lang, "ask_spot", place=area["name"]), "listen": True,
+            "buttons": [button(s, chatbot.place_label(s["name"], lang)) for s in spots]
+            + [button(area, chatbot.say(lang, "whole_area", place=area["name"]))]}
+
+
+def highway_note() -> str | None:
+    """Today's road update typed in by an admin, if it is recent enough to trust."""
+    saved = appdb.get_setting("highway_note")
+    if saved and saved.get("note") and time.time() - saved["at"] < HIGHWAY_NOTE_HOURS * 3600:
+        return saved["note"]
+    return None
+
+
+async def road_note(chat: dict, lang: str) -> str | None:
+    """Before a trip over the hills, once per trip: the admin's update, live weather on the way, the police advisory."""
+    key = (chat["pickup"]["name"], chat["dropoff"]["name"])
+    if chat.get("advised") == key:
+        return None
+    ends = [nearest_place(p["lat"], p["lon"]) for p in (chat["pickup"], chat["dropoff"])]
+    regions = {e["region"] for e in ends}
+    if len(regions) == 1:
+        return None
+    nh44 = regions in ({"JMU", "KSH"}, {"HIL", "KSH"}) or any(e["name"] in HIGHWAY_TOWNS for e in ends)
+    names = jkinfo.HIGHWAY_POINTS if nh44 else [next(e["name"] for e in ends if e["region"] != "JMU")]
+    chat["advised"] = key
+
+    def label(name):
+        return chatbot.place_label(name, lang)
+    return await run_in_threadpool(jkinfo.road_advisory, lang, "nh44" if nh44 else "hill", names, label, highway_note())
+
+
 async def next_step(chat: dict, user: dict, lang: str, parsed: chatbot.Parsed, opener: str | None) -> dict:
     """Ask for what's missing, or give the fare. Only one question at a time, like a person."""
     def lead(text: str) -> str:
         return f"{opener} {text}" if opener else chatbot.with_ack(lang, text, chat["turn"])
 
     reply = trip_points(chat)
+    where = spot_question(chat, lang)
+    if where:
+        return {**reply, **where, "text": lead(where["text"])}
     if not chat["pickup"]:
         chat["asking"] = "pickup"
         # ask_location: the app may answer with the rider's position itself, if already allowed.
         return {**reply, "text": lead(chatbot.say(lang, "ask_pickup", dropoff=chat["dropoff"]["name"])),
-                "buttons": place_buttons(lang, "pickup", user), "listen": True, "ask_location": True}
+                "buttons": place_buttons(lang, "pickup", user), "listen": True, "ask_location": True,
+                "locating_text": chatbot.say(lang, "locating")}
     if not chat["dropoff"]:
         chat["asking"] = "dropoff"
         return {**reply, "text": lead(chatbot.say(lang, "ask_dropoff", pickup=chat["pickup"]["name"])),
@@ -1342,9 +1418,13 @@ async def next_step(chat: dict, user: dict, lang: str, parsed: chatbot.Parsed, o
     try:
         quoted = chat_route(chat)
     except HTTPException as error:
+        there = chat["dropoff"]["name"]
         chat.update(dropoff=None, vehicle=None)
+        if "too close" in str(error.detail):
+            return {"text": chatbot.say(lang, "already_there", place=there), "listen": True}
         return {"text": explain_quote_error(lang, error)}
 
+    advice = await road_note(chat, lang)
     approx = next((p for p in (chat["pickup"], chat["dropoff"]) if p.get("approx") and p.get("area")), None)
     note = chatbot.say(lang, "approx", area=approx["area"]) if approx else None
     names = chatbot.VEHICLE_NAMES[lang]
@@ -1359,15 +1439,17 @@ async def next_step(chat: dict, user: dict, lang: str, parsed: chatbot.Parsed, o
         text = (chatbot.say(lang, "not_offered", vehicle=names[chat["vehicle"]]) if chat["vehicle"]
                 else chatbot.say(lang, "ask_vehicle", **trip))
         chat["vehicle"] = None
-        text = f"{lead(text)} {chatbot.say(lang, 'hint_vehicle')}"
+        text = " ".join(t for t in (lead(text), advice, chatbot.say(lang, "hint_vehicle")) if t)
         return {**reply, "path": quoted["path"], "text": text, "note": note, "buttons": buttons, "listen": True}
 
     chat["awaiting"] = "book"
     labels = chatbot.BUTTON_LABELS[lang]
     rec = recommendation_note(lang, option)
     return {**reply, "path": quoted["path"],
-            "text": lead(chatbot.say(lang, "best_value" if best else "confirm", vehicle=names[option["vehicle"]], fare=option["fare"], **trip))
-                    + " " + chatbot.say(lang, "hint_confirm"),
+            "text": " ".join(t for t in (
+                lead(chatbot.say(lang, "best_value" if best else "confirm", vehicle=names[option["vehicle"]],
+                                 fare=option["fare"], **trip)),
+                advice, chatbot.say(lang, "hint_confirm")) if t),
             "note": " ".join(n for n in (note, rec) if n) or None,
             "buttons": [{"label": labels["no"], "send": "no"}, {"label": labels["yes"], "send": "yes"}]}
 
@@ -1416,7 +1498,7 @@ def admin_overview(admin: dict = Depends(require_admin)):
 @router.get("/admin/conditions")
 def admin_conditions(admin: dict = Depends(require_admin)):
     return {"regions": {r: {**conditions_for(r), "name": REGIONS[r]["name"]} for r in REGIONS},
-            "caps": fair_caps(), "rival_rates": rival_rates()}
+            "caps": fair_caps(), "rival_rates": rival_rates(), "highway_note": highway_note()}
 
 
 @router.put("/admin/conditions/{region}")
@@ -1427,6 +1509,18 @@ def set_conditions(region: str, body: ConditionsBody, admin: dict = Depends(requ
         raise HTTPException(422, "Unknown weather condition.")
     appdb.set_setting(f"conditions:{region}", body.model_dump())
     return conditions_for(region)
+
+
+class HighwayBody(BaseModel):
+    note: str = Field("", max_length=300)
+
+
+@router.put("/admin/highway")
+def set_highway_note(body: HighwayBody, admin: dict = Depends(require_admin)):
+    """Today's road update for riders (from the J&K Traffic Police advisory); empty clears it."""
+    note = body.note.strip()
+    appdb.set_setting("highway_note", {"note": note, "at": time.time()} if note else None)
+    return {"note": highway_note()}
 
 
 @router.put("/admin/caps")

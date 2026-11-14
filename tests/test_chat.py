@@ -250,7 +250,8 @@ class ConversationTests(unittest.TestCase):
 
     def test_a_new_request_never_books_on_its_own_book_word(self):
         self.say("Jammu to Katra by cab")
-        reply = self.say("book a cab from Jammu to Samba")
+        # A specific place, so no "where in Samba?" question comes first.
+        reply = self.say("book a cab from Jammu to Bahu Fort")
         self.assertIn("Shall I book", reply["text"])
         self.assertIsNone(self.active())
 

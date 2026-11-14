@@ -123,8 +123,19 @@ async function saveRegion(code, values) {
   await api(`/admin/conditions/${code}`, { method: "PUT", body: { ...current, ...values } });
 }
 
+async function saveHighwayNote(note) {
+  try {
+    const saved = await api("/admin/highway", { method: "PUT", body: { note } });
+    $("highway-note").value = saved.note || "";
+    $("highway-status").textContent = saved.note ? "Saved. Riders hear it for the next 24 hours." : "Cleared.";
+  } catch (e) { $("highway-status").textContent = e.message; }
+}
+
 async function refreshConditions() {
   conditions = await api("/admin/conditions");
+  $("highway-note").value = conditions.highway_note || "";
+  $("highway").onsubmit = event => { event.preventDefault(); saveHighwayNote($("highway-note").value); };
+  $("highway-clear").onclick = () => saveHighwayNote("");
   $("regions").replaceChildren(...Object.entries(conditions.regions).map(([code, data]) => regionCard(code, data)));
 
   const normal = el("input", { id: "cap-normal", type: "number", min: 1, max: 1.4, step: 0.05, value: conditions.caps.normal });

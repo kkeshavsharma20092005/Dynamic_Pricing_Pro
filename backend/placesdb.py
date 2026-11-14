@@ -186,4 +186,53 @@ def nearby_worship(lat: float, lon: float, faith: str, limit: int = 6, radius_km
     return sorted(found, key=lambda r: r["km"])[:limit]
 
 
+def find_in_area(text: str, lat: float, lon: float, radius_km: float = 3.0) -> dict | None:
+    """The nearest place inside an area whose name has every word said: after "where in Gandhi Nagar?",
+    "district hospital" means the one in Gandhi Nagar, not a better-named one 40 km away."""
+    words = [w for w in normalise(text) if w not in CITY_WORDS]
+    if not words:
+        return None
+    best = None
+    for row in _rows:
+        names = [set(form) for form in row["forms"]]
+        if any(all(w in form for w in words) for form in names):
+            km = distance_km(lat, lon, row["lat"], row["lon"])
+            if km <= radius_km and (best is None or km < best[0]):
+                best = (km, row)
+    return {"name": best[1]["name"], "lat": best[1]["lat"], "lon": best[1]["lon"]} if best else None
+
+
+# The kinds of place a rider names as "where in Gandhi Nagar": hospitals, markets, colleges...
+LANDMARK_WORDS = {"chowk", "station", "fort", "qila", "palace", "mahal", "mandi", "garden", "bagh", "gate", "park", "ground",
+                  "चौक", "स्टेशन", "किला", "महल", "मंडी", "बाग", "पार्क"}
+SPOT_KINDS = {"hospital", "marketplace", "mall", "college", "university", "bus_station", "railway", "worship",
+              "tourism", "historic", "cinema", "leisure", "courthouse", "townhall"}
+
+
+def spots_in(lat: float, lon: float, radius_km: float, limit: int = 6) -> list:
+    """Well-known spots inside an area, best known first and at most two of a kind, for "where in X?"."""
+    found = []
+    for row in _rows:
+        if row["kind"] not in SPOT_KINDS or "closed" in row["name"].lower() or not set(row["forms"][0]) - GENERIC:
+            continue
+        # "Historic" is mostly statues named after people; keep the ones riders go to.
+        if row["kind"] in ("historic", "leisure") and not LANDMARK_WORDS & set(row["forms"][0]):
+            continue
+        if not re.search(r"[^\W\d_]{3}", row["name"]):         # "15 Corps" and other codes
+            continue
+        km = distance_km(lat, lon, row["lat"], row["lon"])
+        if km <= radius_km:
+            found.append((-RANK.get(row["kind"], 0), km, row))
+    spots, per_kind, names = [], {}, set()
+    for _, km, row in sorted(found, key=lambda f: (f[0], f[1])):
+        if per_kind.get(row["kind"], 0) >= 2 or row["name"].lower() in names:
+            continue
+        per_kind[row["kind"]] = per_kind.get(row["kind"], 0) + 1
+        names.add(row["name"].lower())
+        spots.append({"name": row["name"], "lat": row["lat"], "lon": row["lon"]})
+        if len(spots) == limit:
+            break
+    return spots
+
+
 _load()
