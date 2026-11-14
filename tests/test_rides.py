@@ -784,6 +784,39 @@ class RideAppTests(unittest.TestCase):
         self.assertEqual(self.client.post(f"/api/pay/{token}").status_code, 200)
         self.assertEqual(self.client.get("/api/rides", headers=driver).json()[0]["payment"]["status"], "paid")
 
+    def test_scanned_page_pays_with_a_plain_form_without_scripts(self):
+        # In-app browsers (Google Lens, camera apps) may drop a script's background request,
+        # so the page itself is built on the server and pays with an ordinary form POST.
+        rider, driver, url, ride = self.finished_ride("cab")
+        with appdb.connect() as conn:
+            token = conn.execute("SELECT pay_token FROM rides WHERE id = ?", (ride["id"],)).fetchone()["pay_token"]
+        early = self.client.get(f"/pay/{token}")
+        self.assertIn("You can pay once the trip has ended", early.text)
+        self.assertEqual(self.client.post(f"/pay/{token}", follow_redirects=False).status_code, 409)
+        self.client.post(f"{url}/advance/completed", headers=driver)
+        self.client.post("/api/driver/state", headers=driver, json={"online": False})
+
+        page = self.client.get(f"/pay/{token}")
+        self.assertEqual(page.status_code, 200)
+        self.assertIn(f'<form id="pay-form" method="post" action="/pay/{token}">', page.text)
+        self.assertIn("DEMO PAYMENT", page.text)
+        rider_token = rider["Authorization"].removeprefix("Bearer ")
+        with self.client.websocket_connect(f"/api/ws?token={rider_token}") as rider_ws:
+            sent = self.client.post(f"/pay/{token}", follow_redirects=False)
+            self.assertEqual(sent.status_code, 303)
+            self.assertEqual(sent.headers["location"], f"/pay/{token}")
+            while rider_ws.receive_json()["type"] != "paid":
+                pass
+        receipt = self.client.get(f"/pay/{token}")
+        self.assertIn("Payment received", receipt.text)
+        self.assertNotIn("pay-form", receipt.text)
+        # Refreshing or resubmitting changes nothing.
+        self.assertEqual(self.client.post(f"/pay/{token}", follow_redirects=False).status_code, 303)
+        self.assertEqual(self.client.get("/api/rides", headers=rider).json()[0]["payment"]["method"], "qr_demo")
+        bad = self.client.get("/pay/not-a-real-link")
+        self.assertEqual(bad.status_code, 404)
+        self.assertIn("Payment not done", bad.text)
+
     def test_payment_waits_for_the_trip_to_end_and_bad_links_fail(self):
         rider, driver, url, ride = self.finished_ride("auto")
         token = self.client.get("/api/rides/active", headers=rider).json()

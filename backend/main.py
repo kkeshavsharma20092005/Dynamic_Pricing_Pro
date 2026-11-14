@@ -175,11 +175,6 @@ if FRONTEND.exists():
     def admin_app():
         return FileResponse(FRONTEND / "admin.html")
 
-    # Opened by scanning the QR code shown when a trip ends (see payments.py).
-    @app.get("/pay/{token}", include_in_schema=False)
-    def pay_page(token: str):
-        return FileResponse(FRONTEND / "pay.html")
-
     @app.get("/dashboard", include_in_schema=False)
     def dashboard():
         return FileResponse(FRONTEND / "index.html")
